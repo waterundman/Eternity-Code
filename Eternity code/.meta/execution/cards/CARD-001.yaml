@@ -1,0 +1,15 @@
+id: CARD-001
+req_refs:
+  - REQ-001
+content:
+  objective: Improve test coverage for core modules
+  approach: Add unit tests for the most critical functions
+  benefit: Better code quality and fewer bugs
+  cost: ''
+  risk: May take time to write tests
+  warnings: []
+prediction:
+  confidence: 0.7
+decision:
+  status: pending
+created_at: '2026-03-27T16:27:01.020Z'
