@@ -1,0 +1,173 @@
+# meta/loops/loop-NNN.schema.yaml
+# ─────────────────────────────────────────────────────────────
+# Complete record of one loop execution.
+# Written incrementally: agent fills each section as the loop
+# progresses. Human never writes to this file directly.
+# ─────────────────────────────────────────────────────────────
+
+_schema_version: "1.0.0"
+_schema_type: loop_record
+
+id: string                            # "loop-001"
+sequence: integer                     # 1-indexed
+started_at: datetime
+completed_at: datetime | null
+
+status:
+  type: enum
+  values: [running, decision_pending, executing, evaluating, completed, rolled_back, aborted]
+
+# ── phase 1: analysis ────────────────────────────────────────
+# Agent reads meta/design.yaml and current codebase.
+# Records what it found before generating candidates.
+analysis:
+  codebase_snapshot:
+    files_read: integer
+    total_lines: integer
+    git_sha: string                   # HEAD at loop start
+  
+  requirement_coverage:
+    type: array
+    items:
+      req_id: string
+      coverage_before: float          # from design.yaml
+      coverage_assessed: float        # agent's fresh assessment
+      gap_description: string
+  
+  constraint_proximity:
+    type: array
+    items:
+      constraint_ref: string
+      status:
+        type: enum
+        values: [safe, warning, breach]
+      detail: string
+  
+  active_negatives_checked:
+    type: array
+    items: string                     # NEG ids verified against codebase
+  
+  negatives_unlocked:
+    type: array | null
+    items: string                     # NEG ids whose condition was met this loop
+
+# ── phase 2: candidate generation ────────────────────────────
+candidates:
+  generated_count: integer
+  filtered_count: integer             # removed due to negative space
+  
+  filter_log:
+    type: array
+    items:
+      candidate_summary: string       # what was filtered
+      matched_negative: string        # NEG id that blocked it
+  
+  presented_cards:
+    type: array
+    items: string                     # CARD ids shown to human
+
+# ── phase 3: human decision ──────────────────────────────────
+decision_session:
+  started_at: datetime
+  completed_at: datetime | null
+  duration_seconds: integer | null
+  
+  accepted_cards:
+    type: array
+    items: string
+  
+  rejected_cards:
+    type: array
+    items: string
+  
+  skipped_cards:
+    type: array
+    items: string                     # pending, no explicit decision
+  
+  new_negatives_written:
+    type: array
+    items: string                     # NEG ids created from rejections
+  
+  # If human rejected all and re-defined direction
+  direction_override: string | null
+
+# ── phase 4: execution ───────────────────────────────────────
+execution:
+  cards_executed:
+    type: array
+    items:
+      card_id: string
+      status:
+        type: enum
+        values: [success, failed, rolled_back]
+      files_modified:
+        type: array
+        items: string
+      git_sha_after: string | null
+      error: string | null
+  
+  total_files_modified: integer
+  git_sha_before: string
+  git_sha_after: string | null
+
+# ── phase 5: evaluation ──────────────────────────────────────
+evaluation:
+  ran_at: datetime | null
+  
+  factor_results:
+    type: array
+    items:
+      factor_id: string
+      value_before: string
+      value_after: string
+      normalized_score: float         # 0.0–1.0
+      passed_floor: boolean
+      delta: float
+  
+  composite_score_before: float
+  composite_score_after: float
+  composite_delta: float
+  
+  conflicts_detected:
+    type: array
+    items:
+      factor_a: string
+      factor_b: string
+      description: string
+      severity:
+        type: enum
+        values: [warn, block]
+  
+  # Did any floor breach force a rollback?
+  forced_rollback: boolean
+  rollback_reason: string | null
+
+# ── phase 6: loop close ──────────────────────────────────────
+close:
+  # Updates written back to design.yaml
+  design_updates:
+    requirements_coverage_updated: boolean
+    negatives_added:
+      type: array
+      items: string
+    negatives_lifted:
+      type: array
+      items: string
+    eval_baselines_updated: boolean
+    loop_history_appended: boolean
+  
+  # One-paragraph agent summary of this loop
+  # Written to loop_history in design.yaml
+  summary: string
+  
+  # Agent recommendations for next loop
+  next_loop_hints:
+    type: array
+    items:
+      type:
+        type: enum
+        values: [coverage_gap, eval_regression, constraint_risk, opportunity]
+      message: string
+      priority:
+        type: enum
+        values: [high, medium, low]

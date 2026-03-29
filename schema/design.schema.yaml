@@ -1,0 +1,219 @@
+# meta/design.schema.yaml
+# ─────────────────────────────────────────────────────────────
+# MetaDesign root schema
+# This file is the single source of truth for a project's
+# meta-design state. Agent reads this at the start of every loop.
+# ─────────────────────────────────────────────────────────────
+
+_schema_version: "1.0.0"
+_schema_type: meta_design
+
+# ── 1. project identity ──────────────────────────────────────
+project:
+  id: string                          # uuid, generated on init
+  name: string                        # human-readable slug
+  
+  stage:
+    type: enum
+    values: [prototype, mvp, growth, mature]
+  
+  # These two sentences are the agent's north star.
+  # Checked at the start of every loop before anything else.
+  core_value: string                  # "帮助印尼中小学教师节省批改时间"
+  anti_value: string                  # "不是替代教师的专业判断"
+  
+  tech_stack:
+    primary:
+      type: array
+      items: string                   # ["Node.js", "GLM API"]
+    forbidden:
+      type: array
+      items:
+        path: string
+        reason: string
+        until: string | null          # stage name or null = permanent
+  
+  created_at: datetime
+  updated_at: datetime
+
+# ── 2. meta requirements ─────────────────────────────────────
+requirements:
+  type: array
+  items:
+    id: string                        # "REQ-001"
+    text: string                      # natural language
+    priority:
+      type: enum
+      values: [p0, p1, p2]
+    
+    # How the agent checks if this requirement is satisfied.
+    # Used to generate decision card candidates each loop.
+    signal:
+      type:
+        type: enum
+        values: [metric, behavior, llm_eval, human_eval]
+      spec: string
+      # metric:    "api_latency_p95 < 500ms"
+      # behavior:  "教师能在3步以内导出报告"
+      # llm_eval:  prompt template string
+      # human_eval: criteria list (see eval_factors for detail)
+    
+    # Agent-assessed, updated each loop end. 0.0–1.0
+    coverage: float
+    coverage_note: string             # agent's one-line explanation
+    last_checked: datetime
+
+# ── 3. constraints ───────────────────────────────────────────
+constraints:
+
+  # Files/modules the agent must never modify
+  immutable_modules:
+    type: array
+    items:
+      path: string                    # relative to project root
+      reason: string
+      until: string | null            # null = permanent
+
+  # API contracts that must not have breaking changes
+  stable_interfaces:
+    type: array
+    items:
+      name: string
+      spec: string                    # OpenAPI path or fn signature
+      breaking_change_def: string     # what counts as a breaking change
+
+  # Hard performance budgets — violation blocks the loop commit
+  performance_budget:
+    type: array
+    items:
+      metric: string                  # "api_latency_p95"
+      threshold: string               # "< 800ms"
+      measurement_spec: string        # how to measure (script path or query)
+      hard: boolean                   # true = violation rolls back commit
+  
+  # Plain-language compliance rules
+  compliance:
+    type: array
+    items: string
+
+# ── 4. negative space ────────────────────────────────────────
+# Each entry narrows the agent's solution space.
+# The agent filters its candidate cards against this list before
+# presenting them to the human.
+rejected_directions:
+  type: array
+  items:
+    id: string                        # "NEG-001"
+    text: string                      # what direction is excluded
+    reason: string                    # why — agent learns intent, not just rule
+    
+    scope:
+      type:
+        type: enum
+        values: [permanent, conditional, phase]
+      
+      # conditional: human can re-open when this becomes true
+      condition: string | null        # "monthly_active_users > 100"
+      
+      # phase: auto-unlocks at this stage (moves to pending_review)
+      until_phase: string | null      # stage name
+    
+    source_card: string               # "CARD-023" — traceability
+    created_at: datetime
+    status:
+      type: enum
+      values: [active, pending_review, lifted]
+    lifted_at: datetime | null
+    lifted_note: string | null
+
+# ── 5. evaluation factors ────────────────────────────────────
+# The agent's closed-loop feedback system.
+# Factors are evaluated at the end of every loop.
+eval_factors:
+  type: array
+  items:
+    id: string                        # "EVAL-001"
+    name: string
+    
+    role:
+      type:
+        type: enum
+        values: [objective, proxy, guardrail, diagnostic]
+        # objective  = direct optimization target
+        # proxy      = stand-in when direct measurement isn't possible
+        # guardrail  = not optimized, but must not regress
+        # diagnostic = root-cause analysis only, not scored
+      proxies_for: string | null      # EVAL id — required if role=proxy
+      proxy_validity: string | null   # when the proxy assumption holds
+    
+    measurement:
+      type:
+        type: enum
+        values: [metric, llm_eval, human_eval]
+      spec: string                    # query / script / description
+      llm_prompt: string | null       # template, use {output} as placeholder
+      llm_scale: string | null        # "1-5, 5=best"
+      human_criteria: array | null    # list of pass/fail criteria
+    
+    threshold:
+      target: string                  # ideal    "≥ 85%"
+      floor: string                   # red line "≥ 60%"  — breach = loop blocked
+      baseline: string                # current value, updated each loop
+    
+    relations:
+      conflicts_with: array | null    # list of EVAL ids
+      depends_on: array | null        # these must pass floor before this is scored
+      weight: float                   # 0.0–1.0, sum across objectives = 1.0
+    
+    lifecycle:
+      active_from: string             # stage name
+      active_until: string | null     # null = always active
+      review_at: string | null        # trigger note for human review
+
+# ── 6. search policy ─────────────────────────────────────────
+# Controls how the agent explores the solution space each loop.
+search_policy:
+  mode:
+    type: enum
+    values: [conservative, balanced, exploratory]
+    # conservative = consolidate existing, low risk
+    # balanced     = mix of consolidation and new ground
+    # exploratory  = wider jumps, higher variance
+  
+  max_cards_per_loop: integer         # recommended: 3
+  exploration_rate: float             # 0.0–1.0
+  
+  # Card generation priority order (agent follows this sequence)
+  candidate_sources:
+    type: array
+    items:
+      source:
+        type: enum
+        values: [coverage_gap, tech_debt, eval_regression, user_feedback, free_exploration]
+      weight: float
+  
+  # When a candidate would land within these constraint zones,
+  # emit a warning card instead of a regular card
+  warn_proximity_to:
+    type: array
+    items: string                     # constraint field names
+
+# ── 7. loop history (summary refs) ───────────────────────────
+# Full loop records live in .meta/loops/loop-NNN.yaml
+# This section holds only the summary index.
+loop_history:
+  total_loops: integer
+  last_loop_id: string
+  last_loop_at: datetime
+  loops:
+    type: array
+    items:
+      loop_id: string
+      status:
+        type: enum
+        values: [completed, rolled_back, aborted]
+      cards_proposed: integer
+      cards_accepted: integer
+      cards_rejected: integer
+      composite_score_delta: float    # change from previous loop
+      summary: string                 # one-line agent summary

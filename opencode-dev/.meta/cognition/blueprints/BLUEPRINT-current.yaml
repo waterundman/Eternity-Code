@@ -1,0 +1,43 @@
+version: "v001"
+created_at: "2026-03-29T00:00:00Z"
+created_by: "opencode/mimo-v2-pro-free"
+supersedes: null
+valid_until: "2026-04-30"
+
+current_state: |
+  Eternity Code 的核心迭代系统已完成基础架构搭建。
+  主链 MetaDesign -> Card Generation -> Decision -> Plan/Preflight -> Execute -> Evaluate -> Optimize 已基本实现。
+  Agent 调度层（dispatcher.ts、registry.ts、context-builder.ts、6个角色）已实现。
+  Dashboard 基本 API 已实现。
+  新目录规范（DIR_SPEC.md）已完成迁移，包括 paths.ts、context-loader.ts、cognition.ts、logs.ts。
+  双速认知系统（TWO_SPEED_SYSTEM.md）框架已设计，但尚未实现。
+
+priorities:
+  - id: P1
+    goal: "实现双速认知系统的外化认知层"
+    rationale: "外化认知层是整个双速系统的基础，需要先实现 insights、blueprints、logs 的读写机制"
+    acceptance: "loop 结束后可以自动写入 LOG，下一个 loop 的 agent 能读取 insights 和 blueprints"
+
+  - id: P2
+    goal: "实现 quality-monitor.ts 质量监测"
+    rationale: "质量监测是触发 SOTA 模型介入的关键机制"
+    acceptance: "loop 开始时能自动评估技术债密度、TODO 数量、回滚率等指标"
+
+  - id: P3
+    goal: "实现 restructure 模式"
+    rationale: "restructure 模式是 SOTA 模型执行全局优化的核心能力"
+    acceptance: "能通过 /meta restructure 命令触发全局诊断和重构方案生成"
+
+constraints:
+  - "不修改 design.yaml 的 schema（由 SOTA 负责 schema 演化）"
+  - "不修改 dispatcher.ts 的核心调度逻辑"
+  - "新功能必须在没有 .meta/ 的项目里静默跳过"
+  - "弱模型不能修改 cognition/ 目录下的任何文件"
+  - "上下文 Token 控制遵循 Context 管理策略，总 token ≤ 40% max context"
+
+known_debt:
+  - "command.ts 里的 readline 交互代码需要抽象成独立模块"
+  - "extractText() 函数在多个文件里重复定义"
+  - "缺少 yaml 解析失败时的统一错误处理"
+  - "dashboard/server.ts 中仍有部分硬编码路径（如 reports 目录）"
+  - "session 参数使用 any 类型，需要定义具体类型"

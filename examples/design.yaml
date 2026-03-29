@@ -1,0 +1,253 @@
+_schema_version: "1.0.0"
+_schema_type: meta_design
+
+project:
+  id: "7f3a9c2e-4b1d-4e8a-9f6c-2d3e5a7b8c9d"
+  name: learning-assessment-agent
+  stage: mvp
+  core_value: "Help primary-school teachers reach clear student assessment results with fewer manual steps."
+  anti_value: "Do not replace teacher judgment or collect data beyond what the assessment flow truly needs."
+  tech_stack:
+    primary:
+      - Node.js
+      - GLM API
+      - Express
+    forbidden:
+      - path: python
+        reason: "The team wants to keep maintenance in one language during MVP."
+        until: growth
+      - path: relational_database
+        reason: "Avoid operational overhead before the usage pattern is stable."
+        until: growth
+
+requirements:
+  - id: REQ-001
+    text: "Teachers should save at least 30% of manual grading time after finishing one complete assessment flow."
+    priority: p0
+    signal:
+      type: behavior
+      spec: "Teacher path from upload to report should stay within five meaningful steps."
+    coverage: 0.74
+    coverage_note: "The main flow exists, but feedback still lacks enough explanation for confident teacher action."
+    last_checked: "2025-03-18T14:00:00Z"
+
+  - id: REQ-002
+    text: "Assessment output must be understandable to a non-technical teacher in less than 30 seconds."
+    priority: p0
+    signal:
+      type: llm_eval
+      spec: "Judge whether a non-technical teacher can understand the report summary and suggested actions within 30 seconds."
+    coverage: 0.41
+    coverage_note: "Structure is improving, but the report still does not explain why the student received a given result."
+    last_checked: "2025-03-18T14:00:00Z"
+
+  - id: REQ-003
+    text: "Output language and examples should match the target K-12 curriculum and classroom context."
+    priority: p1
+    signal:
+      type: human_eval
+      spec: "Manual review against the localization criteria in EVAL-005."
+    coverage: 0.20
+    coverage_note: "The flow still uses generic language and lacks localized classroom examples."
+    last_checked: "2025-03-18T14:00:00Z"
+
+constraints:
+  immutable_modules:
+    - path: src/auth
+      reason: "Security-sensitive area that requires human review for any change."
+    - path: src/billing
+      reason: "Billing behavior is contract-sensitive and must stay out of agent-driven edits."
+
+  stable_interfaces:
+    - name: POST /api/evaluate
+      spec: "request: { studentId, answers[] } -> response: { score, feedback, breakdown[] }"
+    - name: GET /api/report/:sessionId
+      spec: "response: { session, teacher_summary, per_question[] }"
+
+  performance_budget:
+    - metric: api_latency_p95
+      threshold: "< 800ms"
+      hard: true
+    - metric: api_latency_p95_report
+      threshold: "< 300ms"
+      hard: false
+
+  compliance:
+    - "Do not persist personally identifying student data on the server."
+    - "Every assessment output must include at least one actionable teacher next step."
+    - "Do not send raw student answers to third-party APIs."
+
+rejected_directions:
+  - id: NEG-001
+    text: "Build a multi-role platform with separate student, parent, and admin experiences."
+    reason: "The MVP only needs the teacher workflow to validate the core value proposition."
+    status: active
+    scope:
+      type: phase
+      until_phase: growth
+    source_card: CARD-007
+    created_at: "2025-03-05T11:20:00Z"
+
+  - id: NEG-002
+    text: "Introduce persistent server-side storage before usage proves the need for history."
+    reason: "Early storage design would lock in immature data assumptions."
+    status: active
+    scope:
+      type: conditional
+      condition: "monthly_active_teachers > 100 OR teachers explicitly request history"
+    source_card: CARD-012
+    created_at: "2025-03-08T09:15:00Z"
+
+  - id: NEG-003
+    text: "Expand score granularity beyond five levels."
+    reason: "Teachers reported that overly fine-grained levels create cognitive load without better classroom action."
+    status: active
+    scope:
+      type: permanent
+    source_card: CARD-019
+    created_at: "2025-03-12T16:40:00Z"
+
+eval_factors:
+  - id: EVAL-001
+    name: teacher_flow_completion
+    role:
+      type: objective
+    measurement:
+      type: metric
+      spec: "completed_sessions / total_initiated_sessions over a rolling 7-day window"
+    threshold:
+      target: ">= 85%"
+      floor: ">= 60%"
+      baseline: "71%"
+    relations:
+      conflicts_with:
+        - EVAL-004
+      weight: 0.40
+    lifecycle:
+      active_from: prototype
+
+  - id: EVAL-002
+    name: api_latency_p95
+    role:
+      type: guardrail
+    measurement:
+      type: metric
+      spec: "scripts/measure-latency.js --endpoint /api/evaluate --samples 50"
+    threshold:
+      target: "< 500ms"
+      floor: "< 800ms"
+      baseline: "620ms"
+    relations:
+      weight: 0
+    lifecycle:
+      active_from: prototype
+
+  - id: EVAL-003
+    name: report_explainability
+    role:
+      type: objective
+    measurement:
+      type: llm_eval
+      spec: "Average explainability score across the latest 10 reports."
+      llm_prompt: "Score whether a non-technical teacher can understand the summary and act on it."
+      llm_scale: "1-5, where 5 is easiest to understand"
+    threshold:
+      target: ">= 4.0"
+      floor: ">= 3.0"
+      baseline: "3.2"
+    relations:
+      weight: 0.35
+    lifecycle:
+      active_from: prototype
+
+  - id: EVAL-004
+    name: report_detail_granularity
+    role:
+      type: proxy
+      proxies_for: EVAL-001
+    measurement:
+      type: metric
+      spec: "Average breakdown item count in assessment responses."
+    threshold:
+      target: "5 items"
+      floor: "3 items"
+      baseline: "3 items"
+    relations:
+      conflicts_with:
+        - EVAL-001
+      weight: 0.10
+    lifecycle:
+      active_from: mvp
+
+  - id: EVAL-005
+    name: local_language_fit
+    role:
+      type: objective
+    measurement:
+      type: human_eval
+      spec: "Manual review before release."
+      human_criteria:
+        - "Terminology matches the target curriculum language."
+        - "Examples feel credible for the target classroom context."
+        - "Tone is appropriate for a teacher-facing report."
+    threshold:
+      target: "3/3 pass"
+      floor: "2/3 pass"
+      baseline: "1/3"
+    relations:
+      weight: 0.15
+    lifecycle:
+      active_from: mvp
+
+search_policy:
+  mode: balanced
+  max_cards_per_loop: 3
+  exploration_rate: 0.25
+  candidate_sources:
+    - source: coverage_gap
+      weight: 0.45
+    - source: eval_regression
+      weight: 0.30
+    - source: tech_debt
+      weight: 0.15
+    - source: free_exploration
+      weight: 0.10
+
+loop_history:
+  total_loops: 4
+  last_loop_id: loop-004
+  last_loop_at: "2025-03-18T14:30:00Z"
+  loops:
+    - loop_id: loop-001
+      status: completed
+      cards_proposed: 3
+      cards_accepted: 2
+      cards_rejected: 1
+      composite_score_delta: 0.08
+      summary: "Built the first working evaluation flow and landed the /api/evaluate baseline."
+
+    - loop_id: loop-002
+      status: completed
+      cards_proposed: 3
+      cards_accepted: 3
+      cards_rejected: 0
+      composite_score_delta: 0.12
+      summary: "Improved report prompting and raised explainability from 2.1 to 3.2."
+
+    - loop_id: loop-003
+      status: rolled_back
+      cards_proposed: 3
+      cards_accepted: 1
+      cards_rejected: 2
+      composite_score_delta: -0.03
+      summary: "A caching experiment helped latency but regressed scoring logic, so the loop was rolled back."
+
+    - loop_id: loop-004
+      status: completed
+      cards_proposed: 3
+      cards_accepted: 2
+      cards_rejected: 1
+      composite_score_delta: 0.06
+      summary: "Recovered the scoring regression, lifted completion from 68% to 71%, and wrote NEG-003."
+
+updated_at: "2025-03-18T14:32:00Z"

@@ -1,0 +1,19 @@
+You are running the MetaDesign evaluation phase.
+
+Your task is to evaluate the execution results against the defined eval factors.
+
+For each eval factor:
+1. Read the factor definition (measurement type, spec, threshold)
+2. Run the evaluation (metric script, LLM eval, or human eval)
+3. Compare the result to the baseline
+4. Determine if the floor was breached
+
+After evaluation:
+1. Update each card's outcome with actual eval deltas
+2. Update design.yaml baselines
+3. If any floor was breached, trigger rollback
+
+Remember:
+- Guardrail factors don't contribute to composite score
+- Floor breaches trigger forced rollback
+- Update prediction_accuracy based on actual vs predicted deltas

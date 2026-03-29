@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Eternity Code — Architecture</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0d0d0f;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  padding: 32px;
+  min-height: 100vh;
+}
+svg { display: block; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1400 1800" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:1400px">
+<defs>
+  <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#444460"/>
+  </marker>
+  <marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#4ade80"/>
+  </marker>
+  <marker id="arr-p" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#a78bfa"/>
+  </marker>
+  <marker id="arr-b" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/>
+  </marker>
+  <marker id="arr-r" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#f87171"/>
+  </marker>
+</defs>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TITLE -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="700" y="40" text-anchor="middle" font-size="22" font-weight="600" fill="#a78bfa" letter-spacing="2">ETERNITY CODE</text>
+<text x="700" y="62" text-anchor="middle" font-size="11" fill="#555570" letter-spacing="1">MetaDesign-Driven Autonomous Software Engineering</text>
+<line x1="80" y1="76" x2="1320" y2="76" stroke="#222230" stroke-width="1"/>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 0: HUMAN -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="104" font-size="9" fill="#444460" letter-spacing="1">HUMAN LAYER</text>
+
+<!-- Human node -->
+<rect x="580" y="112" width="240" height="44" rx="6" fill="#1a1a2e" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="700" y="130" text-anchor="middle" font-size="12" font-weight="500" fill="#a78bfa">Human Developer</text>
+<text x="700" y="147" text-anchor="middle" font-size="10" fill="#7070a0">元需求 · 决策卡片 · 蓝图审批</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 1: TUI (Eternity Code CLI) -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="186" font-size="9" fill="#444460" letter-spacing="1">TUI LAYER  —  packages/opencode/src/cli/cmd/tui/</text>
+<rect x="80" y="194" width="1240" height="130" rx="8" fill="#111118" stroke="#2a2a3a" stroke-width="1"/>
+
+<!-- WelcomeScreen -->
+<rect x="100" y="210" width="180" height="54" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="190" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">WelcomeScreen</text>
+<text x="190" y="243" text-anchor="middle" font-size="9" fill="#555570">项目概览 / 初始化引导</text>
+<text x="190" y="256" text-anchor="middle" font-size="9" fill="#555570">无 .meta/ → 引导页</text>
+
+<!-- Loop Route -->
+<rect x="300" y="210" width="200" height="54" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="400" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">Loop Route</text>
+<text x="400" y="243" text-anchor="middle" font-size="9" fill="#555570">routes/loop/index.tsx</text>
+<text x="400" y="256" text-anchor="middle" font-size="9" fill="#555570">主界面 — /meta 触发</text>
+
+<!-- Sidebar -->
+<rect x="520" y="210" width="160" height="54" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="600" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">Sidebar</text>
+<text x="600" y="243" text-anchor="middle" font-size="9" fill="#555570">REQ 覆盖度条</text>
+<text x="600" y="256" text-anchor="middle" font-size="9" fill="#555570">NEG · EVAL baselines</text>
+
+<!-- CardPanel -->
+<rect x="700" y="210" width="160" height="54" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="780" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">CardPanel</text>
+<text x="780" y="243" text-anchor="middle" font-size="9" fill="#555570">三栏决策卡片</text>
+<text x="780" y="256" text-anchor="middle" font-size="9" fill="#555570">a/r/Enter 交互</text>
+
+<!-- AnomalyPanel -->
+<rect x="880" y="210" width="160" height="54" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="960" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">AnomalyPanel</text>
+<text x="960" y="243" text-anchor="middle" font-size="9" fill="#f87171">Watchdog 异常通知</text>
+<text x="960" y="256" text-anchor="middle" font-size="9" fill="#555570">熔断 / 超时 / 循环</text>
+
+<!-- Chat (degraded) -->
+<rect x="1060" y="210" width="180" height="54" rx="5" fill="#18182a" stroke="#2a2a3a" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="1150" y="228" text-anchor="middle" font-size="10" font-weight="500" fill="#666680">Chat Route (降级)</text>
+<text x="1150" y="243" text-anchor="middle" font-size="9" fill="#444460">原 opencode 对话界面</text>
+<text x="1150" y="256" text-anchor="middle" font-size="9" fill="#444460">/chat 或 c 键展开</text>
+
+<!-- Loop History -->
+<rect x="300" y="278" width="160" height="36" rx="5" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="380" y="295" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">LoopHistory</text>
+<text x="380" y="308" text-anchor="middle" font-size="9" fill="#555570">时间线 · delta · status</text>
+
+<!-- Dashboard link -->
+<rect x="1060" y="278" width="180" height="36" rx="5" fill="#18182a" stroke="#60a5fa" stroke-width="1"/>
+<text x="1150" y="295" text-anchor="middle" font-size="10" font-weight="500" fill="#60a5fa">Web Dashboard</text>
+<text x="1150" y="308" text-anchor="middle" font-size="9" fill="#60a5fa">localhost:7777</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 2: META CORE -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="348" font-size="9" fill="#444460" letter-spacing="1">META CORE  —  packages/opencode/src/meta/</text>
+<rect x="80" y="356" width="1240" height="220" rx="8" fill="#0f0f16" stroke="#2a2a3a" stroke-width="1"/>
+
+<!-- context-loader -->
+<rect x="100" y="372" width="180" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="190" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">context-loader.ts</text>
+<text x="190" y="405" text-anchor="middle" font-size="9" fill="#555570">loadLoopContext()</text>
+<text x="190" y="418" text-anchor="middle" font-size="9" fill="#555570">5层分级加载</text>
+<text x="190" y="431" text-anchor="middle" font-size="9" fill="#555570">design·neg·blueprint·insights·logs</text>
+
+<!-- index.ts / buildSystemContext -->
+<rect x="300" y="372" width="180" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="390" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">index.ts</text>
+<text x="390" y="405" text-anchor="middle" font-size="9" fill="#555570">loadMetaDesign()</text>
+<text x="390" y="418" text-anchor="middle" font-size="9" fill="#555570">buildSystemContext()</text>
+<text x="390" y="431" text-anchor="middle" font-size="9" fill="#555570">computeCoverage()</text>
+
+<!-- paths.ts -->
+<rect x="500" y="372" width="140" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="570" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">paths.ts</text>
+<text x="570" y="405" text-anchor="middle" font-size="9" fill="#555570">MetaPaths.*</text>
+<text x="570" y="418" text-anchor="middle" font-size="9" fill="#555570">所有路径常量</text>
+<text x="570" y="431" text-anchor="middle" font-size="9" fill="#555570">单一路径入口</text>
+
+<!-- cards.ts -->
+<rect x="660" y="372" width="140" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="730" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">cards.ts</text>
+<text x="730" y="405" text-anchor="middle" font-size="9" fill="#555570">parseCardsFromText()</text>
+<text x="730" y="418" text-anchor="middle" font-size="9" fill="#555570">writeCard()</text>
+<text x="730" y="431" text-anchor="middle" font-size="9" fill="#555570">resolveCard() · writeNEG()</text>
+
+<!-- cognition.ts -->
+<rect x="820" y="372" width="160" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="900" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">cognition.ts</text>
+<text x="900" y="405" text-anchor="middle" font-size="9" fill="#555570">writeBlueprint()</text>
+<text x="900" y="418" text-anchor="middle" font-size="9" fill="#555570">writeInsight()</text>
+<text x="900" y="431" text-anchor="middle" font-size="9" fill="#555570">SOTA 只写，弱模型只读</text>
+
+<!-- logs.ts -->
+<rect x="1000" y="372" width="140" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="1070" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">logs.ts</text>
+<text x="1070" y="405" text-anchor="middle" font-size="9" fill="#555570">writeLoopLog()</text>
+<text x="1070" y="418" text-anchor="middle" font-size="9" fill="#555570">LOG-YYYYMMDD-loopNNN.md</text>
+<text x="1070" y="431" text-anchor="middle" font-size="9" fill="#555570">带时间戳文件名</text>
+
+<!-- quality-monitor.ts -->
+<rect x="1160" y="372" width="140" height="64" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="1230" y="390" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">quality-monitor.ts</text>
+<text x="1230" y="405" text-anchor="middle" font-size="9" fill="#555570">assessQuality()</text>
+<text x="1230" y="418" text-anchor="middle" font-size="9" fill="#555570">技术债密度</text>
+<text x="1230" y="431" text-anchor="middle" font-size="9" fill="#555570">回滚率 · SOTA 触发</text>
+
+<!-- command.ts -->
+<rect x="100" y="452" width="200" height="54" rx="5" fill="#16162a" stroke="#a78bfa" stroke-width="1"/>
+<text x="200" y="470" text-anchor="middle" font-size="10" font-weight="500" fill="#a78bfa">command.ts</text>
+<text x="200" y="485" text-anchor="middle" font-size="9" fill="#7070a0">/meta · /meta init</text>
+<text x="200" y="498" text-anchor="middle" font-size="9" fill="#7070a0">/meta restructure</text>
+
+<!-- insights.ts -->
+<rect x="320" y="452" width="160" height="54" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="400" y="470" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">insights.ts</text>
+<text x="400" y="485" text-anchor="middle" font-size="9" fill="#555570">loadInsights()</text>
+<text x="400" y="498" text-anchor="middle" font-size="9" fill="#555570">writeInsight()</text>
+
+<!-- blueprints.ts -->
+<rect x="500" y="452" width="160" height="54" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="580" y="470" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">blueprints.ts</text>
+<text x="580" y="485" text-anchor="middle" font-size="9" fill="#555570">loadCurrentBlueprint()</text>
+<text x="580" y="498" text-anchor="middle" font-size="9" fill="#555570">writeBlueprint() [SOTA]</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 3: AGENT DISPATCH -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="600" font-size="9" fill="#444460" letter-spacing="1">AGENT DISPATCH LAYER  —  meta/agents/</text>
+<rect x="80" y="608" width="820" height="200" rx="8" fill="#0f0f16" stroke="#2a2a3a" stroke-width="1"/>
+
+<!-- Dispatcher -->
+<rect x="100" y="624" width="200" height="74" rx="5" fill="#1a1a2e" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="200" y="642" text-anchor="middle" font-size="11" font-weight="500" fill="#a78bfa">Dispatcher</text>
+<text x="200" y="657" text-anchor="middle" font-size="9" fill="#7070a0">dispatch&lt;T&gt;(roleId, input)</text>
+<text x="200" y="670" text-anchor="middle" font-size="9" fill="#7070a0">context 注入 · 记录 · 路由</text>
+<text x="200" y="683" text-anchor="middle" font-size="9" fill="#7070a0">+ Watchdog.guard() 包裹</text>
+<text x="200" y="696" text-anchor="middle" font-size="9" fill="#555570">dispatcher.ts</text>
+
+<!-- Registry -->
+<rect x="320" y="624" width="160" height="74" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="400" y="642" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">Registry</text>
+<text x="400" y="657" text-anchor="middle" font-size="9" fill="#555570">registerRole()</text>
+<text x="400" y="670" text-anchor="middle" font-size="9" fill="#555570">getRole()</text>
+<text x="400" y="683" text-anchor="middle" font-size="9" fill="#555570">loadAllRoles()</text>
+<text x="400" y="696" text-anchor="middle" font-size="9" fill="#444460">registry.ts</text>
+
+<!-- Context Builder -->
+<rect x="500" y="624" width="160" height="74" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="580" y="642" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">Context Builder</text>
+<text x="580" y="657" text-anchor="middle" font-size="9" fill="#555570">buildAgentContext()</text>
+<text x="580" y="670" text-anchor="middle" font-size="9" fill="#555570">context_needs 按需注入</text>
+<text x="580" y="683" text-anchor="middle" font-size="9" fill="#555570">core_value/req/neg/eval</text>
+<text x="580" y="696" text-anchor="middle" font-size="9" fill="#444460">context-builder.ts</text>
+
+<!-- Parsers -->
+<rect x="680" y="624" width="200" height="74" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="780" y="642" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">Parsers</text>
+<text x="780" y="657" text-anchor="middle" font-size="9" fill="#555570">card-review · coverage</text>
+<text x="780" y="670" text-anchor="middle" font-size="9" fill="#555570">plan · eval-score</text>
+<text x="780" y="683" text-anchor="middle" font-size="9" fill="#555570">prediction-audit · contract</text>
+<text x="780" y="696" text-anchor="middle" font-size="9" fill="#444460">parsers/index.ts</text>
+
+<!-- Roles -->
+<rect x="100" y="714" width="760" height="84" rx="5" fill="#13131e" stroke="#2a2a3a" stroke-width="1"/>
+<text x="480" y="730" text-anchor="middle" font-size="9" fill="#444460" letter-spacing="1">AGENT ROLES  —  roles/</text>
+
+<rect x="112" y="738" width="110" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="167" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">card-reviewer</text>
+<text x="167" y="767" text-anchor="middle" font-size="8" fill="#444460">Rubric 四维</text>
+<text x="167" y="779" text-anchor="middle" font-size="8" fill="#444460">独立评分</text>
+
+<rect x="232" y="738" width="110" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="287" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">coverage-assessor</text>
+<text x="287" y="767" text-anchor="middle" font-size="8" fill="#444460">REQ 覆盖度</text>
+<text x="287" y="779" text-anchor="middle" font-size="8" fill="#444460">checklist 驱动</text>
+
+<rect x="352" y="738" width="110" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="407" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">planner</text>
+<text x="407" y="767" text-anchor="middle" font-size="8" fill="#444460">卡片→Plan</text>
+<text x="407" y="779" text-anchor="middle" font-size="8" fill="#444460">Task 分解</text>
+
+<rect x="472" y="738" width="110" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="527" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">task-executor</text>
+<text x="527" y="767" text-anchor="middle" font-size="8" fill="#444460">单 Task 执行</text>
+<text x="527" y="779" text-anchor="middle" font-size="8" fill="#444460">fresh context</text>
+
+<rect x="592" y="738" width="110" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="647" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">eval-scorer</text>
+<text x="647" y="767" text-anchor="middle" font-size="8" fill="#444460">bash 工具执行</text>
+<text x="647" y="779" text-anchor="middle" font-size="8" fill="#444460">真实测量</text>
+
+<rect x="712" y="738" width="136" height="50" rx="4" fill="#18182a" stroke="#3a3a50" stroke-width="1"/>
+<text x="780" y="754" text-anchor="middle" font-size="9" font-weight="500" fill="#60a5fa">contract-drafter/validator</text>
+<text x="780" y="767" text-anchor="middle" font-size="8" fill="#444460">Sprint Contract</text>
+<text x="780" y="779" text-anchor="middle" font-size="8" fill="#444460">执行前合约协商</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 3B: WATCHDOG -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="920" y="600" font-size="9" fill="#444460" letter-spacing="1">WATCHDOG  —  meta/watchdog/</text>
+<rect x="920" y="608" width="400" height="200" rx="8" fill="#160f0f" stroke="#3a2020" stroke-width="1"/>
+
+<rect x="940" y="624" width="360" height="54" rx="5" fill="#1e1212" stroke="#5a2020" stroke-width="1"/>
+<text x="1120" y="642" text-anchor="middle" font-size="11" font-weight="500" fill="#f87171">Watchdog</text>
+<text x="1120" y="657" text-anchor="middle" font-size="9" fill="#a06060">guard(roleId, loopId, fn)</text>
+<text x="1120" y="670" text-anchor="middle" font-size="9" fill="#a06060">AbortController · 超时 · 写磁盘 · notifyTUI</text>
+
+<rect x="940" y="690" width="160" height="54" rx="5" fill="#1a1010" stroke="#3a2020" stroke-width="1"/>
+<text x="1020" y="708" text-anchor="middle" font-size="10" font-weight="500" fill="#f87171">RepetitionDetector</text>
+<text x="1020" y="723" text-anchor="middle" font-size="9" fill="#804040">工具调用哈希</text>
+<text x="1020" y="736" text-anchor="middle" font-size="9" fill="#804040">幻觉循环检测</text>
+
+<rect x="1120" y="690" width="180" height="54" rx="5" fill="#1a1010" stroke="#3a2020" stroke-width="1"/>
+<text x="1210" y="708" text-anchor="middle" font-size="10" font-weight="500" fill="#f87171">CircuitBreaker</text>
+<text x="1210" y="723" text-anchor="middle" font-size="9" fill="#804040">per-role 独立熔断</text>
+<text x="1210" y="736" text-anchor="middle" font-size="9" fill="#804040">closed/open/half-open</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 4: EXECUTION -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="832" font-size="9" fill="#444460" letter-spacing="1">EXECUTION LAYER  —  meta/execution/</text>
+<rect x="80" y="840" width="1240" height="130" rx="8" fill="#0f0f16" stroke="#2a2a3a" stroke-width="1"/>
+
+<rect x="100" y="856" width="200" height="98" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="200" y="874" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">planner.ts</text>
+<text x="200" y="889" text-anchor="middle" font-size="9" fill="#555570">planCard(cwd, cardId)</text>
+<text x="200" y="902" text-anchor="middle" font-size="9" fill="#555570">PLAN-NNN.yaml 写入</text>
+<text x="200" y="915" text-anchor="middle" font-size="9" fill="#555570">3-5 Task 分解</text>
+<text x="200" y="928" text-anchor="middle" font-size="9" fill="#555570">→ Dispatcher("planner")</text>
+
+<rect x="320" y="856" width="200" height="98" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="420" y="874" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">runner.ts</text>
+<text x="420" y="889" text-anchor="middle" font-size="9" fill="#555570">runPlan(cwd, planId)</text>
+<text x="420" y="902" text-anchor="middle" font-size="9" fill="#555570">negotiateContract() ← 新</text>
+<text x="420" y="915" text-anchor="middle" font-size="9" fill="#555570">依赖顺序执行</text>
+<text x="420" y="928" text-anchor="middle" font-size="9" fill="#555570">git commit per task</text>
+
+<rect x="540" y="856" width="200" height="98" rx="5" fill="#16162a" stroke="#3a3a50" stroke-width="1"/>
+<text x="640" y="874" text-anchor="middle" font-size="10" font-weight="500" fill="#c8c8e0">types.ts</text>
+<text x="640" y="889" text-anchor="middle" font-size="9" fill="#555570">ExecutionPlan</text>
+<text x="640" y="902" text-anchor="middle" font-size="9" fill="#555570">ExecutionTask</text>
+<text x="640" y="915" text-anchor="middle" font-size="9" fill="#555570">ContractDraft</text>
+<text x="640" y="928" text-anchor="middle" font-size="9" fill="#555570">ContractValidation</text>
+
+<!-- Loop lifecycle -->
+<rect x="760" y="856" width="540" height="98" rx="5" fill="#13131e" stroke="#2a2a3a" stroke-width="1"/>
+<text x="1030" y="874" text-anchor="middle" font-size="9" fill="#444460" letter-spacing="1">LOOP 状态机</text>
+<text x="790" y="894" font-size="9" fill="#4ade80">① analyze</text>
+<text x="790" y="910" font-size="9" fill="#60a5fa">② generate</text>
+<text x="790" y="926" font-size="9" fill="#a78bfa">③ decide</text>
+<text x="790" y="942" font-size="9" fill="#fbbf24">④ plan</text>
+<line x1="860" y1="886" x2="860" y2="948" stroke="#2a2a3a" stroke-width="1"/>
+<text x="880" y="894" font-size="9" fill="#fbbf24">⑤ contract</text>
+<text x="880" y="910" font-size="9" fill="#f87171">⑥ execute</text>
+<text x="880" y="926" font-size="9" fill="#60a5fa">⑦ evaluate</text>
+<text x="880" y="942" font-size="9" fill="#4ade80">⑧ close</text>
+<line x1="980" y1="886" x2="980" y2="948" stroke="#2a2a3a" stroke-width="1"/>
+<text x="1000" y="900" font-size="9" fill="#555570">coverage_assessor</text>
+<text x="1000" y="914" font-size="9" fill="#555570">card_reviewer</text>
+<text x="1000" y="928" font-size="9" fill="#555570">eval_scorer (bash)</text>
+<text x="1000" y="942" font-size="9" fill="#555570">prediction_auditor</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 5: FILE SYSTEM (.meta/) -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="994" font-size="9" fill="#444460" letter-spacing="1">.meta/  —  FILE SYSTEM</text>
+<rect x="80" y="1002" width="1240" height="310" rx="8" fill="#0a0a10" stroke="#1e1e2a" stroke-width="1"/>
+
+<!-- design/ -->
+<rect x="100" y="1018" width="220" height="130" rx="5" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="210" y="1036" text-anchor="middle" font-size="10" font-weight="500" fill="#a78bfa">design/</text>
+<text x="115" y="1054" font-size="9" fill="#555570">design.yaml</text>
+<text x="135" y="1068" font-size="8" fill="#444460">project · requirements · constraints</text>
+<text x="135" y="1080" font-size="8" fill="#444460">rejected_directions · eval_factors</text>
+<text x="135" y="1092" font-size="8" fill="#444460">search_policy · loop_history</text>
+<text x="135" y="1104" font-size="8" fill="#fbbf24">watchdog config · two_speed_policy</text>
+<text x="115" y="1118" font-size="9" fill="#555570">schema/</text>
+<text x="135" y="1130" font-size="8" fill="#444460">design · card · loop .schema.yaml</text>
+<text x="210" y="1144" text-anchor="middle" font-size="8" fill="#4ade80">全量必读 每次 loop</text>
+
+<!-- cognition/ -->
+<rect x="340" y="1018" width="260" height="130" rx="5" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="470" y="1036" text-anchor="middle" font-size="10" font-weight="500" fill="#a78bfa">cognition/</text>
+<text x="355" y="1054" font-size="9" fill="#555570">blueprints/</text>
+<text x="375" y="1068" font-size="8" fill="#444460">BLUEPRINT-current.yaml  ← 弱模型只读</text>
+<text x="375" y="1080" font-size="8" fill="#444460">BLUEPRINT-20250320.yaml ← 带时间戳存档</text>
+<text x="375" y="1092" font-size="8" fill="#fbbf24">model_assumptions 字段</text>
+<text x="355" y="1106" font-size="9" fill="#555570">insights/</text>
+<text x="375" y="1118" font-size="8" fill="#444460">INS-NNN.yaml  status: adopted/pending</text>
+<text x="375" y="1130" font-size="8" fill="#444460">implications → system prompt 注入</text>
+<text x="470" y="1144" text-anchor="middle" font-size="8" fill="#fbbf24">SOTA 写 · 弱模型只读</text>
+
+<!-- negatives/ -->
+<rect x="620" y="1018" width="200" height="130" rx="5" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="720" y="1036" text-anchor="middle" font-size="10" font-weight="500" fill="#f87171">negatives/</text>
+<text x="635" y="1054" font-size="9" fill="#555570">NEG-001.yaml</text>
+<text x="655" y="1068" font-size="8" fill="#444460">id · text · reason · status</text>
+<text x="655" y="1080" font-size="8" fill="#444460">scope: permanent/conditional/phase</text>
+<text x="655" y="1092" font-size="8" fill="#444460">condition → 解除条件</text>
+<text x="655" y="1104" font-size="8" fill="#444460">source_card → 可溯源</text>
+<text x="635" y="1118" font-size="9" fill="#555570">NEG-002.yaml  ...</text>
+<text x="720" y="1144" text-anchor="middle" font-size="8" fill="#4ade80">全量必读 每次 loop</text>
+
+<!-- execution/ -->
+<rect x="840" y="1018" width="460" height="130" rx="5" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="1070" y="1036" text-anchor="middle" font-size="10" font-weight="500" fill="#a78bfa">execution/</text>
+
+<text x="855" y="1054" font-size="9" fill="#555570">cards/   CARD-NNN.yaml</text>
+<text x="875" y="1066" font-size="8" fill="#444460">content · prediction · decision · outcome</text>
+
+<text x="855" y="1082" font-size="9" fill="#555570">plans/   PLAN-NNN.yaml</text>
+<text x="875" y="1094" font-size="8" fill="#444460">interpretation · tasks[] · git_sha</text>
+
+<text x="1060" y="1054" font-size="9" fill="#555570">loops/   loop-NNN.yaml</text>
+<text x="1080" y="1066" font-size="8" fill="#444460">6 phase 状态机记录</text>
+
+<text x="1060" y="1082" font-size="9" fill="#555570">logs/    LOG-YYYYMMDD-loopNNN.md</text>
+<text x="1080" y="1094" font-size="8" fill="#444460">完成·问题·技术债·建议</text>
+
+<text x="855" y="1110" font-size="9" fill="#555570">agent-tasks/  task-uuid.yaml</text>
+<text x="875" y="1122" font-size="8" fill="#444460">每次 sub-agent 调用完整记录</text>
+
+<text x="1060" y="1110" font-size="9" fill="#f87171">anomalies/  ANOMALY-YYYYMMDD.yaml</text>
+<text x="1080" y="1122" font-size="8" fill="#804040">Watchdog 触发的异常日志</text>
+
+<text x="1070" y="1144" text-anchor="middle" font-size="8" fill="#60a5fa">最近 3 条 logs 按需读 · 其余按 id 查询</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 6: DASHBOARD -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="1336" font-size="9" fill="#444460" letter-spacing="1">WEB DASHBOARD  —  meta/dashboard/</text>
+<rect x="80" y="1344" width="1240" height="120" rx="8" fill="#0a0f1a" stroke="#1a2a3a" stroke-width="1"/>
+
+<rect x="100" y="1360" width="160" height="88" rx="5" fill="#0f1a2a" stroke="#2a3a50" stroke-width="1"/>
+<text x="180" y="1378" text-anchor="middle" font-size="10" font-weight="500" fill="#60a5fa">server.ts</text>
+<text x="180" y="1393" text-anchor="middle" font-size="9" fill="#405070">Bun.serve() port 7777</text>
+<text x="180" y="1406" text-anchor="middle" font-size="9" fill="#405070">GET / · /api/state</text>
+<text x="180" y="1419" text-anchor="middle" font-size="9" fill="#405070">/api/loops · /api/cards</text>
+<text x="180" y="1432" text-anchor="middle" font-size="9" fill="#405070">/api/anomalies · /api/plans</text>
+
+<rect x="280" y="1360" width="160" height="88" rx="5" fill="#0f1a2a" stroke="#2a3a50" stroke-width="1"/>
+<text x="360" y="1378" text-anchor="middle" font-size="10" font-weight="500" fill="#60a5fa">html.ts</text>
+<text x="360" y="1393" text-anchor="middle" font-size="9" fill="#405070">单页 HTML 模板</text>
+<text x="360" y="1406" text-anchor="middle" font-size="9" fill="#405070">原生 JS · 3s 轮询</text>
+<text x="360" y="1419" text-anchor="middle" font-size="9" fill="#405070">零依赖前端</text>
+
+<rect x="460" y="1360" width="840" height="88" rx="5" fill="#0c1520" stroke="#1a2a3a" stroke-width="1"/>
+<text x="880" y="1378" text-anchor="middle" font-size="9" fill="#444460" letter-spacing="1">DASHBOARD TABS</text>
+<text x="500" y="1398" font-size="9" fill="#60a5fa">REQ 覆盖度条</text>
+<text x="500" y="1412" font-size="9" fill="#60a5fa">NEG 负空间</text>
+<text x="500" y="1426" font-size="9" fill="#60a5fa">EVAL baselines</text>
+<text x="660" y="1398" font-size="9" fill="#60a5fa">Loop History</text>
+<text x="660" y="1412" font-size="9" fill="#60a5fa">score delta 时间线</text>
+<text x="820" y="1398" font-size="9" fill="#60a5fa">Cards (all/pending/accepted/rejected)</text>
+<text x="820" y="1412" font-size="9" fill="#60a5fa">双评分展示 (confidence + weighted)</text>
+<text x="980" y="1398" font-size="9" fill="#60a5fa">Execution (Plans/Tasks)</text>
+<text x="980" y="1412" font-size="9" fill="#60a5fa">git sha per task</text>
+<text x="1140" y="1398" font-size="9" fill="#f87171">Watchdog Status</text>
+<text x="1140" y="1412" font-size="9" fill="#f87171">熔断器 · 异常日志</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LAYER 7: TWO SPEED SYSTEM -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<text x="80" y="1488" font-size="9" fill="#444460" letter-spacing="1">TWO-SPEED SYSTEM</text>
+<rect x="80" y="1496" width="1240" height="100" rx="8" fill="#0a0a10" stroke="#1e1e2a" stroke-width="1"/>
+
+<!-- Weak model -->
+<rect x="100" y="1512" width="380" height="68" rx="5" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="290" y="1530" text-anchor="middle" font-size="11" font-weight="500" fill="#c8c8e0">弱模型 (opencode/mimov2pro)</text>
+<text x="290" y="1547" text-anchor="middle" font-size="9" fill="#555570">高频迭代 · 增量修改 · 执行蓝图</text>
+<text x="290" y="1561" text-anchor="middle" font-size="9" fill="#555570">写 logs · 写 cards/plans/loops · 读 cognition/</text>
+<text x="290" y="1575" text-anchor="middle" font-size="9" fill="#4ade80">日常使用</text>
+
+<!-- quality monitor trigger -->
+<rect x="540" y="1522" width="320" height="48" rx="5" fill="#16161a" stroke="#2a2a3a" stroke-width="1"/>
+<text x="700" y="1541" text-anchor="middle" font-size="10" font-weight="500" fill="#fbbf24">quality-monitor 触发条件</text>
+<text x="700" y="1557" text-anchor="middle" font-size="9" fill="#806040">tech_debt &gt;3/loop · rollback_rate &gt;30% · todo &gt;10</text>
+<text x="700" y="1570" text-anchor="middle" font-size="9" fill="#806040">或每周定时触发</text>
+
+<!-- SOTA model -->
+<rect x="920" y="1512" width="380" height="68" rx="5" fill="#1a1a12" stroke="#50501a" stroke-width="1"/>
+<text x="1110" y="1530" text-anchor="middle" font-size="11" font-weight="500" fill="#fbbf24">SOTA 模型 (codex/gpt-5.4)</text>
+<text x="1110" y="1547" text-anchor="middle" font-size="9" fill="#806040">低频重构 · 完全重写 · 更新蓝图</text>
+<text x="1110" y="1561" text-anchor="middle" font-size="9" fill="#806040">写 cognition/ · 测试 model_assumptions</text>
+<text x="1110" y="1575" text-anchor="middle" font-size="9" fill="#fbbf24">RESTRUCTURE-NNN.yaml → 人工确认 → 执行</text>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- ARROWS — vertical flow -->
+<!-- ═══════════════════════════════════════════════════════ -->
+
+<!-- Human → TUI -->
+<line x1="700" y1="156" x2="700" y2="192" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arr-p)"/>
+<!-- TUI → Meta Core (command) -->
+<line x1="400" y1="324" x2="200" y2="354" stroke="#444460" stroke-width="1" marker-end="url(#arr)"/>
+<!-- Meta Core → Dispatch -->
+<line x1="300" y1="504" x2="200" y2="606" stroke="#444460" stroke-width="1" marker-end="url(#arr)"/>
+<!-- Dispatch → Execution -->
+<line x1="480" y1="808" x2="420" y2="838" stroke="#444460" stroke-width="1" marker-end="url(#arr)"/>
+<!-- Execution → .meta/ write -->
+<line x1="420" y1="970" x2="840" y2="1000" stroke="#444460" stroke-width="1" marker-end="url(#arr)"/>
+<!-- .meta/ → context-loader read -->
+<line x1="210" y1="1002" x2="190" y2="578" stroke="#4ade80" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-g)"/>
+<!-- Dashboard reads .meta/ -->
+<line x1="1070" y1="1312" x2="1070" y2="1342" stroke="#60a5fa" stroke-width="1" marker-end="url(#arr-b)"/>
+<!-- Watchdog → TUI notify -->
+<line x1="960" y1="608" x2="960" y2="326" stroke="#f87171" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr-r)"/>
+<!-- quality-monitor → SOTA trigger -->
+<line x1="700" y1="1496" x2="700" y2="1480" stroke="#fbbf24" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- LEGEND -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<rect x="80" y="1618" width="1240" height="160" rx="8" fill="#0a0a10" stroke="#1e1e2a" stroke-width="1"/>
+<text x="700" y="1640" text-anchor="middle" font-size="9" fill="#444460" letter-spacing="1">LEGEND</text>
+
+<rect x="110" y="1652" width="12" height="12" rx="2" fill="#1a1a2e" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="130" y="1663" font-size="9" fill="#7070a0">核心入口 / 调度器</text>
+
+<rect x="260" y="1652" width="12" height="12" rx="2" fill="#12121e" stroke="#3a3a50" stroke-width="1"/>
+<text x="280" y="1663" font-size="9" fill="#555570">普通模块</text>
+
+<rect x="380" y="1652" width="12" height="12" rx="2" fill="#160f0f" stroke="#5a2020" stroke-width="1"/>
+<text x="400" y="1663" font-size="9" fill="#f87171">Watchdog / 异常</text>
+
+<rect x="520" y="1652" width="12" height="12" rx="2" fill="#12121e" stroke="#2a2a3a" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="540" y="1663" font-size="9" fill="#444460">降级 / 可选</text>
+
+<line x1="110" y1="1686" x2="145" y2="1686" stroke="#4ade80" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-g)"/>
+<text x="155" y="1690" font-size="9" fill="#4ade80">读取（context 加载）</text>
+
+<line x1="290" y1="1686" x2="325" y2="1686" stroke="#444460" stroke-width="1" marker-end="url(#arr)"/>
+<text x="335" y="1690" font-size="9" fill="#555570">调用 / 写入</text>
+
+<line x1="440" y1="1686" x2="475" y2="1686" stroke="#f87171" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr-r)"/>
+<text x="485" y="1690" font-size="9" fill="#f87171">异常通知</text>
+
+<line x1="580" y1="1686" x2="615" y2="1686" stroke="#60a5fa" stroke-width="1" marker-end="url(#arr-b)"/>
+<text x="625" y="1690" font-size="9" fill="#60a5fa">Dashboard 轮询</text>
+
+<text x="700" y="1730" text-anchor="middle" font-size="10" fill="#333350">
+  <tspan fill="#4ade80">design/</tspan>
+  <tspan fill="#555570"> 和 </tspan>
+  <tspan fill="#4ade80">negatives/</tspan>
+  <tspan fill="#555570"> 每次 loop 全量读 · </tspan>
+  <tspan fill="#fbbf24">cognition/</tspan>
+  <tspan fill="#555570"> SOTA 写弱模型读 · </tspan>
+  <tspan fill="#60a5fa">execution/</tspan>
+  <tspan fill="#555570"> 最近 3 条按需读</tspan>
+</text>
+<text x="700" y="1752" text-anchor="middle" font-size="10" fill="#333350">
+  <tspan fill="#a78bfa">Dispatcher</tspan>
+  <tspan fill="#555570"> 是所有 sub-agent 的唯一入口 · </tspan>
+  <tspan fill="#f87171">Watchdog</tspan>
+  <tspan fill="#555570"> 包裹每次调用 · 熔断器 per-role 独立</tspan>
+</text>
+
+</svg>
+</body>
+</html>

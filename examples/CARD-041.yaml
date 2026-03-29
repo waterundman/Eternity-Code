@@ -1,0 +1,87 @@
+# .meta/cards/CARD-041.yaml
+# ─────────────────────────────────────────────────────────────
+
+_schema_version: "1.0.0"
+_schema_type: decision_card
+
+id: CARD-041
+loop_id: loop-005
+req_refs: [REQ-002]
+
+content:
+  objective: "将评估输出的可解释性评分从 3.2 提升至 4.0 以上"
+  approach: |
+    修改 src/prompt/evaluate.js 中的 system prompt，要求 GLM 在每个评分项后
+    附加一句面向教师的依据说明（不超过 20 字）。同步更新 response schema，
+    在每个 breakdown item 中增加 `reason` 字段。
+  benefit: "教师无需猜测评分原因，可直接据此给出反馈，预计完成率同步提升"
+  cost: "每次 API 调用 token 增加约 15%，latency 预计增加 60-100ms"
+  risk: "GLM 对短句依据的生成质量不稳定，需要在 prompt 中做示例引导（few-shot）"
+
+  scope:
+    - src/prompt/evaluate.js
+    - src/types/response.ts
+    - test/evaluate.test.js
+
+  warnings:
+    - type: near_constraint
+      ref: performance_budget[api_latency_p95]
+      message: "当前 baseline 620ms + 预计增量 80ms = 700ms，仍在 800ms floor 内，但余量收窄至 100ms"
+
+prediction:
+  confidence: 0.72
+  basis: "可解释性与输出结构强相关，prompt 增加依据要求是直接手段；置信度未到 0.8+ 因为 GLM 短句质量有不确定性"
+  assumptions:
+    - "GLM API 对 few-shot 示例的响应稳定"
+    - "新增字段不会破坏前端现有渲染逻辑（前端未在 scope 内）"
+    - "token 增加不触发 GLM API 的 rate limit"
+
+  eval_deltas:
+    - eval_id: EVAL-003
+      direction: increase
+      magnitude: "+0.6 至 +1.0 分（均值预测 +0.8）"
+    - eval_id: EVAL-002
+      direction: decrease
+      magnitude: "+60 至 +100ms（latency 变差）"
+    - eval_id: EVAL-001
+      direction: increase
+      magnitude: "+3% 至 +8%（间接：更清晰的输出→更高完成意愿）"
+
+decision:
+  status: accepted
+  chosen_by: human
+  resolved_at: "2025-03-19T10:15:00Z"
+  note: "接受，但要求 few-shot 示例使用真实印尼教师反馈语言，不用通用示例"
+  merged_from: null
+
+outcome:
+  status: success
+
+  actual_eval_deltas:
+    - eval_id: EVAL-003
+      before: "3.2"
+      after: "3.8"
+      delta: "+0.6"
+    - eval_id: EVAL-002
+      before: "620ms"
+      after: "695ms"
+      delta: "+75ms"
+    - eval_id: EVAL-001
+      before: "71%"
+      after: "74%"
+      delta: "+3%"
+
+  prediction_accuracy: 0.81
+  deviation_explanation: |
+    可解释性仅提升 0.6（预测中值），未达预测上限 1.0。
+    原因：GLM 在少数题型（开放题）的依据生成较笼统，few-shot 覆盖不足。
+    Latency 实测 +75ms，在预测范围内。完成率提升 +3%，符合预测下限。
+
+  lessons:
+    - "few-shot 示例需覆盖开放题、选择题、填空题三种题型，不能只用一种"
+    - "依据说明长度限制 20 字在开放题场景下过紧，建议放宽至 35 字"
+    - "可解释性与题型强相关，下一轮可针对开放题单独优化 prompt"
+
+  constraint_breaches: []
+
+  committed_at: "2025-03-19T11:42:00Z"

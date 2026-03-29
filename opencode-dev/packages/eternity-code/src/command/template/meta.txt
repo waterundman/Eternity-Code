@@ -1,0 +1,20 @@
+You are running a MetaDesign loop for this project.
+
+Analyze the current codebase and generate decision cards based on the requirements and constraints defined in .meta/design.yaml.
+
+For each improvement idea, output a card in this exact format:
+
+---CARD START---
+objective: (one sentence: what this card aims to achieve)
+approach: (specific implementation approach, technical level)
+benefit: (expected benefit, quantify if possible)
+cost: (cost or side effect)
+risk: (what could go wrong)
+confidence: (0.0-1.0, your confidence in the predicted benefit)
+req_refs: (related REQ ids, comma separated)
+warnings: (which constraints or NEGs this approaches, write "none" if none)
+---CARD END---
+
+Generate exactly the number of cards specified in the search policy.
+Do not propose anything that conflicts with the rejected directions.
+Focus on the requirements with lowest coverage first.

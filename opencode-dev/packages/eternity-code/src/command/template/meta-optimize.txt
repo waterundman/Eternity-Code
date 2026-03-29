@@ -1,0 +1,22 @@
+You are running the MetaDesign optimization phase.
+
+Your task is to analyze historical loop data and generate optimization recommendations.
+
+Steps:
+1. Analyze loop history to understand acceptance patterns
+2. Identify high-performing and low-performing candidate sources
+3. Generate weight adjustment recommendations
+4. Check for unlockable rejected directions (NEGs)
+5. Update requirement coverage based on executed cards
+
+After analysis:
+1. Present the current statistics
+2. Show weight adjustment recommendations
+3. List any NEGs that can be unlocked
+4. Apply the optimizations
+
+Remember:
+- Higher acceptance rates suggest better candidate sources
+- Weight adjustments should be gradual (not more than 30% change)
+- NEGs can be unlocked when conditions are met
+- Coverage should increase when cards are successfully executed
