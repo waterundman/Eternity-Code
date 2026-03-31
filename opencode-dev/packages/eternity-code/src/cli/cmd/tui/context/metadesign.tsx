@@ -1,4 +1,4 @@
-import { createSignal, onMount } from "solid-js"
+import { createSignal, createEffect, onMount } from "solid-js"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
 import { loadMetaDesign } from "@/meta/design"
@@ -13,6 +13,7 @@ export const { use: useMetaDesign, provider: MetaDesignProvider } = createSimple
     const [error, setError] = createSignal<string | null>(null)
 
     const cwd = () => sdk.directory ?? process.cwd()
+    let prevCwd = cwd()
 
     async function load() {
       setLoading(true)
@@ -31,6 +32,15 @@ export const { use: useMetaDesign, provider: MetaDesignProvider } = createSimple
     async function reload() {
       await load()
     }
+
+    // Auto-reload when directory changes
+    createEffect(() => {
+      const currentCwd = cwd()
+      if (currentCwd !== prevCwd) {
+        prevCwd = currentCwd
+        void load()
+      }
+    })
 
     onMount(() => {
       void load()

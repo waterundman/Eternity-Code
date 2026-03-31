@@ -75,6 +75,49 @@ export function startDashboard(cwd: string): void {
           }
         }
 
+        // QueryEngine summary endpoint
+        if (url.pathname === "/api/query/summary") {
+          try {
+            const { QueryEngine } = await import("../query-engine.js")
+            const engine = new QueryEngine(cwd)
+            const summary = await engine.renderSummary({
+              includeQuality: url.searchParams.get("quality") !== "false",
+              includeAgents: url.searchParams.get("agents") !== "false",
+              includeWatchdog: url.searchParams.get("watchdog") !== "false",
+              includeTechDebt: url.searchParams.get("techdebt") !== "false",
+              includeLoops: url.searchParams.get("loops") !== "false",
+              loopLimit: parseInt(url.searchParams.get("loop_limit") ?? "5"),
+            })
+            return Response.json({ summary }, { headers })
+          } catch (error: any) {
+            return Response.json({ error: error.message }, { status: 500, headers })
+          }
+        }
+
+        // QueryEngine card backlog endpoint
+        if (url.pathname === "/api/query/backlog") {
+          try {
+            const { QueryEngine } = await import("../query-engine.js")
+            const engine = new QueryEngine(cwd)
+            const backlog = await engine.cardBacklog()
+            return Response.json(backlog, { headers })
+          } catch (error: any) {
+            return Response.json({ error: error.message }, { status: 500, headers })
+          }
+        }
+
+        // QueryEngine agent summary endpoint
+        if (url.pathname === "/api/query/agents") {
+          try {
+            const { QueryEngine } = await import("../query-engine.js")
+            const engine = new QueryEngine(cwd)
+            const agents = await engine.agentSummary()
+            return Response.json(agents, { headers })
+          } catch (error: any) {
+            return Response.json({ error: error.message }, { status: 500, headers })
+          }
+        }
+
         if (url.pathname === "/api/dashboard/bootstrap") {
           try {
             const agentTaskLimit = parseInt(url.searchParams.get("agent_task_limit") ?? "50")
@@ -1151,6 +1194,14 @@ function startFileWatcher(cwd: string) {
       updateType = "state"
     } else if (filePath.includes("reports")) {
       updateType = "reports"
+    } else if (filePath.includes("anomalies") || filePath.includes("ANOMALY")) {
+      updateType = "watchdog"
+    } else if (filePath.includes("agent-tasks") || filePath.includes("task-")) {
+      updateType = "agents"
+    } else if (filePath.includes("blueprint")) {
+      updateType = "blueprints"
+    } else if (filePath.includes("insight") || filePath.includes("INS-")) {
+      updateType = "insights"
     }
 
     // Broadcast the update

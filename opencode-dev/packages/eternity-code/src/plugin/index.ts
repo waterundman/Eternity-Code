@@ -18,10 +18,12 @@ export namespace Plugin {
   const log = Log.create({ service: "plugin" })
 
   // Built-in plugins that are directly imported (not installed from npm)
+  // Note: External plugins may use @opencode-ai/plugin types which are structurally
+  // compatible but nominally different from @eternity-code/plugin. Cast is safe.
   const INTERNAL_PLUGINS: PluginInstance[] = [
     CodexAuthPlugin,
     CopilotAuthPlugin,
-    GitlabAuthPlugin,
+    GitlabAuthPlugin as unknown as PluginInstance,
     MetaDesignPlugin,
   ]
 

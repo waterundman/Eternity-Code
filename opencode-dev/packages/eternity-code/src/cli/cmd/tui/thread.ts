@@ -98,6 +98,10 @@ export const TuiThreadCommand = cmd({
       .option("agent", {
         type: "string",
         describe: "agent to use",
+      })
+      .option("cwd", {
+        type: "string",
+        describe: "working directory for MetaDesign (overrides project)",
       }),
   handler: async (args) => {
     // Keep ENABLE_PROCESSED_INPUT cleared even if other code flips it.
@@ -116,9 +120,11 @@ export const TuiThreadCommand = cmd({
 
       // Resolve relative --project paths from PWD, then use the real cwd after
       // chdir so the thread and worker share the same directory key.
+      // --cwd takes priority over --project for MetaDesign working directory.
       const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
-      const next = args.project
-        ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
+      const targetDir = args.cwd ?? args.project
+      const next = targetDir
+        ? Filesystem.resolve(path.isAbsolute(targetDir) ? targetDir : path.join(root, targetDir))
         : Filesystem.resolve(process.cwd())
       const file = await target()
       try {
@@ -216,6 +222,8 @@ export const TuiThreadCommand = cmd({
             model: args.model,
             prompt,
             fork: args.fork,
+            project: args.project,
+            cwd: args.cwd,
           },
         })
       } finally {

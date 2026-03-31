@@ -15,6 +15,7 @@ import type {
 } from "./execution/types.js"
 import { findLatestAcceptedLoop, loadLoopCards, loadLoopRecords, updateLoopExecutionPlan } from "./loop.js"
 import { listMetaEntryPaths, resolveMetaDirectory, resolveMetaEntryPath } from "./paths.js"
+import { getCurrentBranch, isWorkingDirectoryClean, getDefaultBranch } from "./execution/git.js"
 
 const PREVIEW_LIMIT = 5
 const GLOB_PATTERN = /[*?[\]{}]/
@@ -126,6 +127,52 @@ export async function planAcceptedCardsForLoop(
 
 function runExecutionPreflight(cwd: string, plans: ExecutionPlan[]): ExecutionPreflightSummary {
   const updatedPlans = plans.map((plan) => applyPlanPreflight(cwd, plan))
+
+  // Global preflight checks (cross-plan)
+  const globalWarnings: string[] = []
+  const globalBlockers: string[] = []
+
+  // Check 1: Workspace dirty state
+  if (!isWorkingDirectoryClean(cwd)) {
+    globalWarnings.push("Workspace has uncommitted changes. Consider committing or stashing before execution.")
+  }
+
+  // Check 2: Branch state
+  const currentBranch = getCurrentBranch(cwd)
+  const defaultBranch = getDefaultBranch(cwd)
+  if (currentBranch && currentBranch !== defaultBranch) {
+    globalWarnings.push(`Currently on branch '${currentBranch}' (default: '${defaultBranch}'). Ensure this is intentional.`)
+  }
+
+  // Check 3: Multi-task file conflict check (across all plans)
+  const allFileTargets = new Map<string, string[]>()
+  for (const plan of updatedPlans) {
+    for (const task of plan.tasks) {
+      for (const file of task.preflight?.touched_files ?? []) {
+        const existing = allFileTargets.get(file) ?? []
+        allFileTargets.set(file, [...existing, `${plan.id}/${task.id}`])
+      }
+    }
+  }
+  const crossPlanConflicts = [...allFileTargets.entries()]
+    .filter(([, owners]) => owners.length > 1)
+    .map(([file, owners]) => `File '${file}' targeted by: ${owners.join(", ")}`)
+  if (crossPlanConflicts.length > 0) {
+    globalWarnings.push(...crossPlanConflicts)
+  }
+
+  // Apply global checks to all plans
+  for (const plan of updatedPlans) {
+    if (plan.preflight) {
+      plan.preflight.warnings = [...(plan.preflight.warnings ?? []), ...globalWarnings]
+      plan.preflight.blockers = [...(plan.preflight.blockers ?? []), ...globalBlockers]
+      const hasBlockers = plan.preflight.blockers.length > 0
+      const hasWarnings = plan.preflight.warnings.length > 0
+      if (hasBlockers) plan.preflight.status = "blocked"
+      else if (hasWarnings) plan.preflight.status = "warning"
+    }
+  }
+
   for (const plan of updatedPlans) {
     writeExecutionPlan(cwd, plan)
   }

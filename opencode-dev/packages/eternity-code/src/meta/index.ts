@@ -107,6 +107,7 @@ export { planCard, runPlan } from "./execution/index.js"
 export { metaInit } from "./init.js"
 export { LoopOrchestrator } from "./orchestrator.js"
 export { loadMetaRuntimeSnapshot, resolveLoop } from "./runtime.js"
+export { QueryEngine } from "./query-engine.js"
 export type { LoopPhase, DecisionCard, LoopDecision, EvaluationResult } from "./orchestrator.js"
 export type { MetaRuntimeSnapshot, MetaRuntimeStatus, MetaRuntimePhase } from "./runtime.js"
 export type {

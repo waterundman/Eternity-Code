@@ -4,12 +4,13 @@ import yaml from "js-yaml"
 import { loadMetaDesign } from "./index.js"
 import { parseCardsFromText, writeCard, resolveCard, writeRejectedDirection, updateLoopHistory } from "./cards.js"
 import { planCard, runPlan } from "./execution/index.js"
-import type { MetaDesign, Session } from "./types.js"
+import type { MetaDesign, Session, AcceptanceChecklistItem } from "./types.js"
 import { MetaPaths } from "./paths.js"
 import { assessQuality, formatQualityReport } from "./quality-monitor.js"
 import { loadLoopContext } from "./context-loader.js"
 import { handleRestructureOutput } from "./restructure-handler.js"
 import { handleInsightOutput } from "./insight-handler.js"
+import { computeCoverage } from "./types.js"
 
 // 这个函数会被 command registry 调用
 export async function runMetaLoop(cwd: string, session: Session): Promise<void> {
@@ -41,6 +42,12 @@ export async function runMetaLoop(cwd: string, session: Session): Promise<void> 
 
   // 加载完整的 loop 上下文
   const loopContext = await loadLoopContext(cwd)
+
+  // Acceptance Checklist: auto-verify checklist items before generating cards
+  const checklistResult = await runAcceptanceChecklist(cwd, design)
+  if (checklistResult.updated > 0) {
+    console.log(`[MetaDesign] Acceptance checklist: ${checklistResult.updated} items verified, coverage updated`)
+  }
 
   // 质量评估
   const qualityReport = assessQuality(cwd)
@@ -200,10 +207,12 @@ async function runDecisionFlow(
   const yaml_ = await import("js-yaml")
   const readline = await import("readline")
 
-  // Print card summaries
-  console.log("\n" + "─".repeat(52))
-  console.log("  DECISION PHASE — 选择本轮要执行的优化方向")
-  console.log("─".repeat(52))
+  // Print card summaries with card-reviewer scores
+  let dispatcher: import("./agents/dispatcher.js").Dispatcher | null = null
+  if (session) {
+    const { Dispatcher } = await import("./agents/dispatcher.js")
+    dispatcher = new Dispatcher({ cwd, session })
+  }
 
   for (let i = 0; i < cardIds.length; i++) {
     const cardPath = path.join(MetaPaths.cards(cwd), `${cardIds[i]}.yaml`)
@@ -213,6 +222,23 @@ async function runDecisionFlow(
     const conf = pred?.confidence ?? 0
     const confBar = "█".repeat(Math.round(conf * 10)).padEnd(10, "░")
 
+    // Run card-reviewer for this card if dispatcher available
+    let reviewScore: number | null = null
+    let reviewNote = ""
+    if (dispatcher) {
+      try {
+        const review = await dispatcher.dispatch<{ weighted_score: number; reviewer_note: string }>(
+          "card-reviewer",
+          { card: card },
+          loopId
+        )
+        reviewScore = review?.weighted_score ?? null
+        reviewNote = review?.reviewer_note ?? ""
+      } catch {
+        // Review failed, continue without it
+      }
+    }
+
     console.log(`\n  ┌─ ${cardIds[i]} [${((card as Record<string, unknown>).req_refs as string[])?.join(", ") ?? ""}]`)
     console.log(`  │  目标: ${content.objective}`)
     console.log(`  │  手段: ${content.approach}`)
@@ -220,6 +246,13 @@ async function runDecisionFlow(
     console.log(`  │  代价: ${content.cost}`)
     console.log(`  │  风险: ${content.risk}`)
     console.log(`  │  置信: ${confBar} ${(conf * 100).toFixed(0)}%`)
+    if (reviewScore !== null) {
+      const reviewBar = "█".repeat(Math.round(reviewScore)).padEnd(10, "░")
+      console.log(`  │  审查: ${reviewBar} ${reviewScore.toFixed(0)}/10`)
+      if (reviewNote) {
+        console.log(`  │  备注: ${reviewNote}`)
+      }
+    }
     if ((content.warnings as unknown as string[])?.length > 0 && content.warnings !== "none") {
       console.log(`  │  ⚠️   ${content.warnings}`)
     }
@@ -373,4 +406,114 @@ async function runDecisionFlow(
   console.log(`  卡片详情: ${MetaPaths.cards(cwd)}`)
   console.log(`  Plan 详情: ${MetaPaths.plans(cwd)}`)
   console.log("─".repeat(52) + "\n")
+}
+
+/**
+ * Run acceptance checklist verification for all requirements.
+ * Auto-executes verify commands and updates coverage.
+ */
+async function runAcceptanceChecklist(
+  cwd: string,
+  design: MetaDesign,
+): Promise<{ updated: number; errors: string[] }> {
+  const result: { updated: number; errors: string[] } = { updated: 0, errors: [] }
+  const requirements = design.requirements ?? []
+  let anyUpdated = false
+
+  for (const req of requirements) {
+    const checklist = req.acceptance_checklist
+    if (!checklist || checklist.length === 0) continue
+
+    for (const item of checklist) {
+      if (item.status === "pass") continue
+      if (!item.verify?.trim()) continue
+
+      try {
+        const proc = Bun.spawn(["bash", "-c", item.verify], {
+          cwd,
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+
+        const timeoutMs = 15000
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => { proc.kill(); reject(new Error("timeout")) }, timeoutMs)
+        })
+
+        const outputPromise = (async () => {
+          const exitCode = await proc.exited
+          return exitCode === 0
+        })()
+
+        const passed = await Promise.race([outputPromise, timeoutPromise])
+        const newStatus: AcceptanceChecklistItem["status"] = passed ? "pass" : "fail"
+
+        if (item.status !== newStatus) {
+          item.status = newStatus
+          item.last_checked = new Date().toISOString()
+          result.updated++
+          anyUpdated = true
+        }
+      } catch {
+        item.status = "fail"
+        item.last_checked = new Date().toISOString()
+        result.errors.push(`${req.id}/${item.id}: verify command failed`)
+        anyUpdated = true
+      }
+    }
+
+    // Recompute coverage from checklist
+    if (anyUpdated) {
+      req.coverage = computeCoverage(req)
+      req.last_checked = new Date().toISOString()
+    }
+  }
+
+  // Persist updated design if any checklist items changed
+  if (result.updated > 0) {
+    const designPath = MetaPaths.design(cwd)
+    fs.writeFileSync(designPath, yaml.dump(design, { lineWidth: 100 }))
+  }
+
+  return result
+}
+
+/**
+ * Run a restructure analysis using the SOTA model.
+ * Triggered by /meta-restructure command.
+ */
+export async function runMetaRestructure(cwd: string, session: Session, triggeredBy: string = "manual"): Promise<void> {
+  const design = await loadMetaDesign(cwd)
+  if (!design) {
+    console.log("[MetaDesign] No design.yaml found. Run /meta-init first.")
+    return
+  }
+
+  console.log(`\n[MetaDesign] Starting restructure analysis (triggered by: ${triggeredBy})...\n`)
+
+  try {
+    const { Dispatcher } = await import("./agents/dispatcher.js")
+    const dispatcher = new Dispatcher({ cwd, session })
+    const restructurePlan = await dispatcher.dispatchRestructure(triggeredBy)
+    const result = handleRestructureOutput(cwd, restructurePlan)
+
+    if (result.success) {
+      console.log(`[MetaDesign] Restructure plan generated: ${result.restructureId}`)
+      console.log(`[MetaDesign] File: ${result.filePath}`)
+      console.log(`\nReview the plan and run /meta-execute-restructure ${result.restructureId} to apply.`)
+    } else {
+      console.error(`[MetaDesign] Failed to generate restructure plan: ${result.error}`)
+    }
+  } catch (error) {
+    console.error("[MetaDesign] Restructure analysis failed:", error)
+  }
+}
+
+/**
+ * Execute a previously generated restructure plan.
+ */
+export async function runMetaExecuteRestructure(cwd: string, session: Session, restructureId: string): Promise<void> {
+  const { executeRestructure, formatRestructureExecutionResult } = await import("./restructure-executor.js")
+  const result = await executeRestructure(cwd, restructureId, session)
+  console.log(formatRestructureExecutionResult(result))
 }

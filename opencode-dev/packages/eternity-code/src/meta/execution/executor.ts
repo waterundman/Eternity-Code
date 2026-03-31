@@ -7,6 +7,7 @@ import { loadMetaDesign, buildSystemContext } from "../design.js"
 import { updateLoopRollback } from "../loop.js"
 import { branchExists, getCurrentBranch, getGitHead, runGitCommand } from "./git.js"
 import { resolveMetaEntryPath } from "../paths.js"
+import type { AgentRole } from "../agents/types.js"
 
 export interface ExecutorOptions extends ExecutionOptionsBase {
   cwd: string
@@ -193,6 +194,12 @@ export class ExecutionExecutor {
         }
       }
 
+      // Sprint Contract: negotiate verifiable completion criteria before execution
+      const negotiatedDod = await this.negotiateContract(task)
+      if (negotiatedDod) {
+        task.spec.definition_of_done = negotiatedDod
+      }
+
       const diffs = await this.generateTaskDiffs(task, plan)
       if (diffs.length === 0) {
         return { success: true }
@@ -285,6 +292,80 @@ export class ExecutionExecutor {
 
     if (plan.loop_id) {
       await updateLoopRollback(this.cwd, plan.loop_id, this.planId, reason, error)
+    }
+  }
+
+  /**
+   * Sprint Contract: negotiate verifiable completion criteria before task execution.
+   * Uses contract-drafter + contract-validator agent roles.
+   * Falls back to original definition_of_done if negotiation fails.
+   */
+  private async negotiateContract(task: ExecutionTask): Promise<string | null> {
+    if (!this.session) return null
+
+    try {
+      // Step 1: contract-drafter drafts verifiable criteria
+      const draftResponse = await this.session.createSubtask?.({
+        systemPrompt: `你是一个任务合约起草 agent。
+你的唯一任务是将一个模糊的完成描述转化为可以被脚本或命令客观验证的标准。
+可以验证的标准必须满足：运行某个命令，输出结果是明确的 pass 或 fail，不需要人类判断。
+
+不可接受的标准示例："功能正常运行" / "代码整洁" / "用户体验良好"
+可接受的标准示例："bun typecheck 返回 0" / "curl /api/evaluate 返回包含 reason 字段的 JSON" / "test/evaluate.test.ts 全部通过"`,
+        userMessage: `Task: ${task.spec.title}
+Description: ${task.spec.description}
+Current definition of done: ${task.spec.definition_of_done}
+
+请按以下格式输出：
+---CONTRACT START---
+criteria: （可以被命令行验证的完成标准，一句话）
+verify_command: （具体的验证命令）
+---CONTRACT END---`,
+      })
+
+      if (!draftResponse) return null
+      const draftText = this.extractText(draftResponse)
+      const criteriaMatch = draftText.match(/criteria:\s*(.+)/)
+      if (!criteriaMatch?.[1]) return null
+      const draftedCriteria = criteriaMatch[1].trim()
+
+      // Step 2: contract-validator confirms objectivity
+      const validationResponse = await this.session.createSubtask?.({
+        systemPrompt: `你是一个合约验证 agent。
+你需要判断一个完成标准是否满足：可以被命令行工具在 30 秒内客观验证，结果是明确的 pass/fail。
+如果不满足，给出修正版本。`,
+        userMessage: `Proposed completion criteria: ${draftedCriteria}
+Original task description: ${task.spec.definition_of_done}
+
+请按以下格式输出：
+---VALIDATION START---
+is_verifiable: （true/false）
+reason: （为什么可以或不可以验证）
+revised_criteria: （如果不可验证，给出修正后的标准；如果可验证，重复原标准）
+---VALIDATION END---`,
+      })
+
+      if (!validationResponse) return draftedCriteria
+      const validationText = this.extractText(validationResponse)
+      const isVerifiable = validationText.includes("is_verifiable: true") || validationText.includes("is_verifiable:True")
+
+      if (isVerifiable) {
+        console.log(`[Contract] ${task.id}: completion criteria verified as objective`)
+        return draftedCriteria
+      }
+
+      // Try to extract revised criteria
+      const revisedMatch = validationText.match(/revised_criteria:\s*(.+)/)
+      if (revisedMatch?.[1]) {
+        console.log(`[Contract] ${task.id}: criteria revised for objectivity`)
+        return revisedMatch[1].trim()
+      }
+
+      console.warn(`[Contract] ${task.id}: criteria not verifiable, using original definition_of_done`)
+      return null
+    } catch (error) {
+      console.warn(`[Contract] ${task.id}: contract negotiation failed, using original definition_of_done:`, error)
+      return null
     }
   }
 

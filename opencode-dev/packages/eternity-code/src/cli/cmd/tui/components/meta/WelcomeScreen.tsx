@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import { Logo } from "@tui/component/logo"
 import { useMetaDesign } from "@tui/context/metadesign"
+import { useSDK } from "@tui/context/sdk"
 import { useTheme } from "@tui/context/theme"
 import { Show, createMemo } from "solid-js"
 
@@ -22,6 +23,7 @@ function formatDelta(value?: number) {
 export function WelcomeScreen() {
   const { theme } = useTheme()
   const meta = useMetaDesign()
+  const sdk = useSDK()
 
   const design = createMemo(() => meta.design())
   const requirements = createMemo(() => design()?.requirements ?? [])
@@ -62,74 +64,85 @@ export function WelcomeScreen() {
       <Logo />
 
       <Show when={!meta.loading()} fallback={<text fg={theme.textMuted}>Loading project context...</text>}>
-        <Show when={!meta.error()} fallback={<text fg={theme.error}>{meta.error()}</text>}>
-          <Show
-            when={design()}
-            fallback={
-              <box flexDirection="column" alignItems="center" gap={1}>
-                <text fg={theme.text} attributes={TextAttributes.BOLD}>
-                  Eternity Code
-                </text>
-                <text fg={theme.textMuted}>No MetaDesign found in this workspace.</text>
-                <text fg={theme.text}>
-                  Run <text attributes={TextAttributes.BOLD}>/meta-init</text> to create `.meta/design/design.yaml`.
-                </text>
-                <text fg={theme.textMuted}>Then use /meta to start the first loop.</text>
-                <text fg={theme.textMuted}>You can also type a normal prompt below and work without MetaDesign.</text>
-              </box>
-            }
-          >
-            {(current) => (
-              <box flexDirection="column" alignItems="center" gap={1}>
-                <text fg={theme.text} attributes={TextAttributes.BOLD}>
-                  Eternity Code
-                </text>
-                <box flexDirection="row" gap={2}>
+        <Show when={!sdk.connectionError()} fallback={
+          <box flexDirection="column" alignItems="center" gap={1}>
+            <text fg={theme.text} attributes={TextAttributes.BOLD}>
+              Eternity Code
+            </text>
+            <text fg={theme.error}>Server connection failed</text>
+            <text fg={theme.textMuted}>{sdk.connectionError()}</text>
+            <text fg={theme.textMuted}>Retrying automatically...</text>
+          </box>
+        }>
+          <Show when={!meta.error()} fallback={<text fg={theme.error}>{meta.error()}</text>}>
+            <Show
+              when={design()}
+              fallback={
+                <box flexDirection="column" alignItems="center" gap={1}>
                   <text fg={theme.text} attributes={TextAttributes.BOLD}>
-                    {current().project.name}
+                    Eternity Code
                   </text>
-                  <text fg={theme.textMuted}>stage: {current().project.stage}</text>
-                  <text fg={theme.textMuted}>
-                    loop #{current().loop_history?.total_loops ?? current().loop_history?.loops?.length ?? 0}
-                  </text>
-                </box>
-
-                <box flexDirection="row" gap={2}>
-                  <text fg={theme.textMuted}>Requirements</text>
-                  <text fg={theme.text}>{coverageBar(averageCoverage())}</text>
-                  <text fg={theme.textMuted}>
-                    avg {(averageCoverage() * 100).toFixed(0)}% coverage across {requirements().length}
-                  </text>
-                </box>
-
-                <box flexDirection="row" gap={2}>
-                  <text fg={theme.textMuted}>Constraints</text>
-                  <text fg={theme.text}>{activeConstraintCount()} tracked</text>
-                </box>
-
-                <box flexDirection="row" gap={2}>
-                  <text fg={theme.textMuted}>Negatives</text>
+                  <text fg={theme.textMuted}>No MetaDesign found in this workspace.</text>
                   <text fg={theme.text}>
-                    {activeNegatives()} active / {pendingReviewNegatives()} pending review
+                    Run <text attributes={TextAttributes.BOLD}>/meta-init</text> to create `.meta/design/design.yaml`.
                   </text>
+                  <text fg={theme.textMuted}>Then use /meta to start the first loop.</text>
+                  <text fg={theme.textMuted}>You can also type a normal prompt below and work without MetaDesign.</text>
                 </box>
+              }
+            >
+              {(current) => (
+                <box flexDirection="column" alignItems="center" gap={1}>
+                  <text fg={theme.text} attributes={TextAttributes.BOLD}>
+                    Eternity Code
+                  </text>
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.text} attributes={TextAttributes.BOLD}>
+                      {current().project.name}
+                    </text>
+                    <text fg={theme.textMuted}>stage: {current().project.stage}</text>
+                    <text fg={theme.textMuted}>
+                      loop #{current().loop_history?.total_loops ?? current().loop_history?.loops?.length ?? 0}
+                    </text>
+                  </box>
 
-                <box flexDirection="row" gap={2}>
-                  <text fg={theme.textMuted}>Last loop</text>
-                  <text fg={theme.text}>{formatDate(current().loop_history?.last_loop_at)}</text>
-                  <text fg={lastLoopDeltaColor()}>{formatDelta(lastLoop()?.composite_score_delta)}</text>
-                  <Show when={lastLoop()?.status}>
-                    <text fg={theme.textMuted}>{lastLoop()?.status}</text>
-                  </Show>
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>Requirements</text>
+                    <text fg={theme.text}>{coverageBar(averageCoverage())}</text>
+                    <text fg={theme.textMuted}>
+                      avg {(averageCoverage() * 100).toFixed(0)}% coverage across {requirements().length}
+                    </text>
+                  </box>
+
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>Constraints</text>
+                    <text fg={theme.text}>{activeConstraintCount()} tracked</text>
+                  </box>
+
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>Negatives</text>
+                    <text fg={theme.text}>
+                      {activeNegatives()} active / {pendingReviewNegatives()} pending review
+                    </text>
+                  </box>
+
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.textMuted}>Last loop</text>
+                    <text fg={theme.text}>{formatDate(current().loop_history?.last_loop_at)}</text>
+                    <text fg={lastLoopDeltaColor()}>{formatDelta(lastLoop()?.composite_score_delta)}</text>
+                    <Show when={lastLoop()?.status}>
+                      <text fg={theme.textMuted}>{lastLoop()?.status}</text>
+                    </Show>
+                  </box>
+
+                  <text fg={theme.text}>
+                    Run <text attributes={TextAttributes.BOLD}>/meta</text> to start the next loop.
+                  </text>
+                  <text fg={theme.textMuted}>Use /meta-decide, /meta-execute, /meta-eval, and /meta-optimize as the loop advances.</text>
+                  <text fg={theme.textMuted}>Or type a normal prompt below if you want to stay in standard chat mode.</text>
                 </box>
-
-                <text fg={theme.text}>
-                  Run <text attributes={TextAttributes.BOLD}>/meta</text> to start the next loop.
-                </text>
-                <text fg={theme.textMuted}>Use /meta-decide, /meta-execute, /meta-eval, and /meta-optimize as the loop advances.</text>
-                <text fg={theme.textMuted}>Or type a normal prompt below if you want to stay in standard chat mode.</text>
-              </box>
-            )}
+              )}
+            </Show>
           </Show>
         </Show>
       </Show>

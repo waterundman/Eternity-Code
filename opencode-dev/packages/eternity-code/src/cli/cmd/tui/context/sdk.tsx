@@ -1,7 +1,7 @@
 import { createOpencodeClient, type Event } from "@eternity-code/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, onCleanup, onMount, createSignal } from "solid-js"
 
 export type EventSource = {
   on: (handler: (event: Event) => void) => () => void
@@ -20,6 +20,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     const abort = new AbortController()
     let workspaceID: string | undefined
     let sse: AbortController | undefined
+    const [connectionError, setConnectionError] = createSignal<string | null>(null)
+    const [connected, setConnected] = createSignal(false)
 
     function createSDK() {
       return createOpencodeClient({
@@ -48,7 +50,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       queue = []
       timer = undefined
       last = Date.now()
-      // Batch all event emissions so all store updates result in a single render
       batch(() => {
         for (const event of events) {
           emitter.emit(event.type, event)
@@ -61,8 +62,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       const elapsed = Date.now() - last
 
       if (timer) return
-      // If we just flushed recently (within 16ms), batch this with future events
-      // Otherwise, process immediately to avoid latency
       if (elapsed < 16) {
         timer = setTimeout(flush, 16)
         return
@@ -75,17 +74,31 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       const ctrl = new AbortController()
       sse = ctrl
       ;(async () => {
-        while (true) {
-          if (abort.signal.aborted || ctrl.signal.aborted) break
-          const events = await sdk.event.subscribe({}, { signal: ctrl.signal })
+        try {
+          while (true) {
+            if (abort.signal.aborted || ctrl.signal.aborted) break
+            const events = await sdk.event.subscribe({}, { signal: ctrl.signal })
+            setConnectionError(null)
+            setConnected(true)
 
-          for await (const event of events.stream) {
-            if (ctrl.signal.aborted) break
-            handleEvent(event)
+            for await (const event of events.stream) {
+              if (ctrl.signal.aborted) break
+              handleEvent(event)
+            }
+
+            if (timer) clearTimeout(timer)
+            if (queue.length > 0) flush()
           }
-
-          if (timer) clearTimeout(timer)
-          if (queue.length > 0) flush()
+        } catch (err) {
+          if (abort.signal.aborted || ctrl.signal.aborted) return
+          const msg = err instanceof Error ? err.message : String(err)
+          setConnectionError(msg)
+          setConnected(false)
+          // Retry after delay
+          await new Promise(r => setTimeout(r, 3000))
+          if (!abort.signal.aborted && !ctrl.signal.aborted) {
+            startSSE()
+          }
         }
       })().catch(() => {})
     }
@@ -94,6 +107,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       if (props.events) {
         const unsub = props.events.on(handleEvent)
         onCleanup(unsub)
+        setConnected(true)
       } else {
         startSSE()
       }
@@ -112,9 +126,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       directory: props.directory,
       event: emitter,
       fetch: props.fetch ?? fetch,
+      connected,
+      connectionError,
       setWorkspace(next?: string) {
         if (workspaceID === next) return
         workspaceID = next
+        setConnected(false)
+        setConnectionError(null)
         sdk = createSDK()
         props.events?.setWorkspace?.(next)
         if (!props.events) startSSE()

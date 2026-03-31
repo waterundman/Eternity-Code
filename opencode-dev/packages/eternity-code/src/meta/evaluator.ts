@@ -77,12 +77,18 @@ export async function runEvalFactor(
  * 运行 metric 类型的评估
  */
 async function runMetricEval(cwd: string, spec: string): Promise<string> {
-  // 尝试运行评估脚本
+  // Try to run assessment command directly via bash
+  // spec can be a direct command like "bun test --coverage" or "wc -l src/**/*.ts"
+  if (!spec.includes("scripts/") && !spec.includes("scripts\\")) {
+    return runBashCommand(cwd, spec)
+  }
+
+  // Legacy: try to run assessment script
   if (spec.includes("scripts/") || spec.includes("scripts\\")) {
     const scriptRelPath = spec.split(" ")[0]
     const scriptPath = path.resolve(cwd, scriptRelPath)
 
-    // 安全检查：确保脚本路径在工作目录内
+    // Safety check: ensure script path is within working directory
     if (!scriptPath.startsWith(path.resolve(cwd))) {
       console.warn(`[Evaluator] Script path outside working directory: ${scriptRelPath}`)
       return "0"
@@ -94,7 +100,7 @@ async function runMetricEval(cwd: string, spec: string): Promise<string> {
     }
 
     try {
-      // 使用异步执行，避免阻塞事件循环
+      // Use async execution to avoid blocking event loop
       const proc = Bun.spawn(["bun", scriptPath], {
         cwd,
         stdout: "pipe",
@@ -200,7 +206,7 @@ function extractText(response: unknown): string {
 }
 
 function extractScoreFromResponse(text: string, scale?: string): number | null {
-  // 尝试从响应中提取分数
+  // Try to extract score from response
   const patterns = [
     /score[:\s]*(\d+\.?\d*)/i,
     /(\d+\.?\d*)\s*\/\s*\d+/,
@@ -213,7 +219,7 @@ function extractScoreFromResponse(text: string, scale?: string): number | null {
     if (match) {
       const score = parseFloat(match[1])
       if (!isNaN(score)) {
-        // 根据scale规范化分数
+        // Normalize score based on scale
         if (scale?.includes("1-5")) {
           return Math.min(5, Math.max(1, score))
         }
@@ -223,6 +229,46 @@ function extractScoreFromResponse(text: string, scale?: string): number | null {
   }
 
   return null
+}
+
+/**
+ * Run a bash command and return the output.
+ * Used for direct metric evaluation via bash commands.
+ */
+async function runBashCommand(cwd: string, command: string): Promise<string> {
+  try {
+    const proc = Bun.spawn(["bash", "-c", command], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+
+    // Set timeout
+    const timeoutMs = 30000
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        proc.kill()
+        reject(new Error(`Command execution timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+    })
+
+    const outputPromise = (async () => {
+      const output = await new Response(proc.stdout).text()
+      const exitCode = await proc.exited
+      if (exitCode !== 0) {
+        const stderr = await new Response(proc.stderr).text()
+        console.warn(`[Evaluator] Command failed: ${command}\n${stderr}`)
+        return "0"
+      }
+      return output.trim()
+    })()
+
+    return await Promise.race([outputPromise, timeoutPromise])
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.warn(`[Evaluator] Failed to run command: ${command}`, errorMsg)
+    return "0"
+  }
 }
 
 /**
