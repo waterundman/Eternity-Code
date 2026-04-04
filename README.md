@@ -1,21 +1,8 @@
 # Eternity Code
 
-<p align="center">
-  <a href="https://eternity-code.ai">
-    <img src="https://eternity-code.ai/logo.svg" alt="Eternity Code logo" width="200">
-  </a>
-</p>
+**MetaDesign-Driven Autonomous Software Engineering System**
 
-<p align="center">
-  <strong>MetaDesign-Driven Autonomous Software Engineering System</strong><br>
-  <strong>MetaDesign 驱动的自主软件工程系统</strong>
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/eternity-code"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/eternity-code-ai"><img alt="npm" src="https://img.shields.io/npm/v/eternity-code-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/eternity-code/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/eternity-code/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+**MetaDesign 驱动的自主软件工程系统**
 
 ---
 
@@ -181,22 +168,11 @@ Eternity Code 内置多种专业 Agent 角色：
 
 ## Quick Start / 快速开始
 
-### Installation / 安装
-
-```bash
-# One-click install / 一键安装
-curl -fsSL https://eternity-code.ai/install | bash
-
-# Package manager / 包管理器
-npm i -g eternity-code-ai@latest
-brew install anomalyco/tap/eternity-code
-```
-
 ### Launch / 启动
 
 ```bash
-# Default: start TUI in current directory
-# 默认：在当前目录启动 TUI
+# Start TUI in current directory
+# 在当前目录启动 TUI
 eternity-code
 
 # Specify a project directory
@@ -260,34 +236,28 @@ Eternity code/
 │   │                               # design/card/loop schema 定义
 ├── examples/                       # Example MetaDesign configurations
 │                                   # 示例 MetaDesign 配置
-└── opencode-dev/                   # Main engineering repository
-    │                               # 实际运行工程
-    └── packages/
-        ├── eternity-code/          # Core MetaDesign system
-        │   │                       # 核心 MetaDesign 系统
-        │   └── src/
-        │       ├── cli/cmd/tui/    # TUI interface components
-        │       │                   # TUI 界面组件
-        │       ├── meta/           # MetaDesign core logic
-        │       │                   # MetaDesign 核心逻辑
-        │       │   ├── agents/     # Agent dispatch (10+ roles)
-        │       │   │               # Agent 调度（10+ 角色）
-        │       │   ├── execution/  # Execution engine
-        │       │   │               # 执行引擎
-        │       │   ├── watchdog/   # Anomaly monitoring
-        │       │   │               # 异常监控
-        │       │   ├── dashboard/  # Web Dashboard server
-        │       │   │               # Web Dashboard 服务器
-        │       │   └── prompt/     # Prompt optimization
-        │       │                   # Prompt 优化
-        │       ├── session/        # Session & prompt loop
-        │       │                   # 会话与 prompt 主循环
-        │       └── tool/           # Tool system (bash, read, edit, etc.)
-        │                           # 工具系统
-        ├── plugin/                 # Plugin system
-        │                           # 插件系统
-        └── sdk/                    # SDK v2 client
-                                    # SDK v2 客户端
+└── packages/
+    └── eternity-code/              # Core MetaDesign system
+        │                           # 核心 MetaDesign 系统
+        └── src/
+            ├── cli/cmd/tui/        # TUI interface components
+            │                       # TUI 界面组件
+            ├── meta/               # MetaDesign core logic
+            │                       # MetaDesign 核心逻辑
+            │   ├── agents/         # Agent dispatch (10+ roles)
+            │   │                   # Agent 调度（10+ 角色）
+            │   ├── execution/      # Execution engine
+            │   │                   # 执行引擎
+            │   ├── watchdog/       # Anomaly monitoring
+            │   │                   # 异常监控
+            │   ├── dashboard/      # Web Dashboard server
+            │   │                   # Web Dashboard 服务器
+            │   └── prompt/         # Prompt optimization
+            │                       # Prompt 优化
+            ├── session/            # Session & prompt loop
+            │                       # 会话与 prompt 主循环
+            └── tool/               # Tool system (bash, read, edit, etc.)
+                                    # 工具系统
 ```
 
 ---
@@ -319,29 +289,3 @@ Eternity code/
 | [Blueprint / 蓝图](docs/BLUEPRINT.md) | Current state and future roadmap / 当前状态和未来规划 |
 | [Project Structure / 项目结构](docs/PROJECT_STRUCTURE.md) | Repository and directory layout / 仓库和目录层级说明 |
 | [Two-Speed System / 双速系统](docs/TWO_SPEED_SYSTEM.md) | Dual-speed cognitive architecture / 双速认知架构 |
-| [Context Strategy / 上下文策略](docs/Context\ 管理策略.md) | Three-layer context management / 三层上下文管理 |
-| [Sub-Agent Dispatch / 子Agent调度](docs/SUBAGENT_DISPATCH.md) | Agent role definitions and dispatch logic / Agent 角色定义和调度逻辑 |
-| [Iteration Plan / 迭代方案](docs/CLAUDE_CODE_ANALYSIS_ITERATION_PLAN.md) | Claude Code analysis and iteration roadmap / Claude Code 分析和迭代方案 |
-| [Iteration Diary / 迭代日记](docs/ITERATION_DIARY.md) | Development log and diagnostic records / 开发日志和诊断记录 |
-
----
-
-## Contributing / 贡献
-
-Contributions are welcome! Please read the [Contributing Guide](docs/CONTRIBUTING.md) for details.
-
-欢迎贡献！请阅读 [贡献指南](docs/CONTRIBUTING.md) 了解详情。
-
----
-
-## Community / 社区
-
-- [Discord](https://discord.gg/eternity-code)
-- [X.com](https://x.com/eternity-code)
-- [Website / 官网](https://eternity-code.ai)
-
----
-
-<p align="center">
-  <sub>Built with ❤️ by the Eternity Code Team / 由 Eternity Code 团队用 ❤️ 构建</sub>
-</p>
