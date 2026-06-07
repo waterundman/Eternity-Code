@@ -21,6 +21,7 @@ import type {
   WatchdogStatus,
 } from "./types.js"
 import { DEFAULT_CONFIG } from "./types.js"
+import type { TraceContext } from "../utils/trace-context.js"
 
 export class Watchdog {
   private config: WatchdogConfig
@@ -39,8 +40,10 @@ export class Watchdog {
   async guard<T>(
     roleId: string,
     loopId: string,
-    fn: (signal: AbortSignal, onToolCall?: (tool: string, params: unknown) => void) => Promise<T>
+    fn: (signal: AbortSignal, onToolCall?: (tool: string, params: unknown) => void) => Promise<T>,
+    traceContext?: TraceContext
   ): Promise<T> {
+    const traceId = traceContext?.traceId
 
     // 1. 检查熔断器
     const breaker = this.getBreaker(roleId)
@@ -51,18 +54,14 @@ export class Watchdog {
         loop_id: loopId,
         detail: breaker.describe(),
         action_taken: "skipped",
-      })
+      }, traceId)
       throw new Error(`[Watchdog] ${breaker.describe()}`)
     }
 
-    // 2. 设置超时 AbortController
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      controller.abort()
-    }, this.config.call_timeout_ms)
-
+    // 2. 准备重复检测与工具调用监控
     const detector = new RepetitionDetector()
     let toolCallCount = 0
+    let currentController: AbortController | null = null
 
     // 3. 工具调用拦截回调
     const onToolCall = (tool: string, params: unknown) => {
@@ -77,8 +76,8 @@ export class Watchdog {
           detail: `工具调用次数达到上限 ${this.config.max_tool_calls}`,
           tool_call_count: toolCallCount,
           action_taken: "interrupted",
-        })
-        controller.abort()
+        }, traceId)
+        currentController?.abort()
         return
       }
 
@@ -94,14 +93,15 @@ export class Watchdog {
           tool_call_count: toolCallCount,
           repeated_call: { tool: toolName, params_hash: key.split("::")[1], count },
           action_taken: "interrupted",
-        })
-        controller.abort()
+        }, traceId)
+        currentController?.abort()
       }
     }
 
     try {
-      const result = await this.withRetry(roleId, loopId, () => fn(controller.signal, onToolCall))
-      clearTimeout(timer)
+      const result = await this.withRetry(roleId, loopId, (signal) => fn(signal, onToolCall), (controller) => {
+        currentController = controller
+      }, traceId)
       breaker.recordSuccess()
 
       // 检查空响应
@@ -112,16 +112,15 @@ export class Watchdog {
           loop_id: loopId,
           detail: "模型返回了空响应",
           action_taken: "skipped",
-        })
+        }, traceId)
       }
 
       return result
 
     } catch (err) {
-      clearTimeout(timer)
-
-      // 超时
-      if (controller.signal.aborted) {
+      const controller = currentController as AbortController | null
+      const aborted = controller !== null && controller.signal.aborted
+      if (aborted) {
         const type = toolCallCount >= this.config.max_tool_calls
           ? "infinite_loop" : "timeout"
         this.recordAnomaly({
@@ -133,7 +132,7 @@ export class Watchdog {
             : `工具调用超限后中断`,
           tool_call_count: toolCallCount,
           action_taken: "interrupted",
-        })
+        }, traceId)
         breaker.recordFailure()
         throw new Error(`[Watchdog] ${roleId} interrupted: ${type}`)
       }
@@ -149,23 +148,33 @@ export class Watchdog {
   private async withRetry<T>(
     roleId: string,
     loopId: string,
-    fn: () => Promise<T>
+    fn: (signal: AbortSignal) => Promise<T>,
+    onControllerCreated?: (controller: AbortController) => void,
+    traceId?: string
   ): Promise<T> {
-    // 如果 max_retries <= 0，直接执行不重试
-    if (this.config.max_retries <= 0) {
-      return fn()
-    }
+    const maxAttempts = Math.max(1, this.config.max_retries)
 
     let lastError: unknown
-    for (let attempt = 0; attempt < this.config.max_retries; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), this.config.call_timeout_ms)
+      onControllerCreated?.(controller)
+
       try {
-        return await fn()
+        const result = await fn(controller.signal)
+        clearTimeout(timeout)
+        return result
       } catch (err) {
+        clearTimeout(timeout)
         lastError = err
+
+        if (controller.signal.aborted) {
+          throw err
+        }
+
         const anomalyType = classifyApiError(err)
 
-        if (anomalyType === "rate_limit") {
-          // 尊重 retry-after header（如果有的话）
+        if (anomalyType === "rate_limit" && attempt < maxAttempts - 1) {
           const retryAfter = (err as any).headers?.["retry-after"]
           const waitMs = retryAfter
             ? parseInt(String(retryAfter)) * 1000
@@ -177,12 +186,12 @@ export class Watchdog {
             loop_id: loopId,
             detail: `429 Rate limited，等待 ${waitMs}ms 后重试（第 ${attempt + 1} 次）`,
             action_taken: "waiting",
-          })
+          }, traceId)
           await sleep(waitMs)
           continue
         }
 
-        if (anomalyType === "network_error") {
+        if (anomalyType === "network_error" && attempt < maxAttempts - 1) {
           const waitMs = this.config.retry_base_delay_ms * Math.pow(2, attempt)
           this.recordAnomaly({
             type: "network_error",
@@ -190,7 +199,7 @@ export class Watchdog {
             loop_id: loopId,
             detail: `网络错误，${waitMs}ms 后重试（第 ${attempt + 1} 次）：${(err as Error).message}`,
             action_taken: "retried",
-          })
+          }, traceId)
           await sleep(waitMs)
           continue
         }
@@ -202,30 +211,28 @@ export class Watchdog {
             loop_id: loopId,
             detail: "Context 超出模型上限，不重试",
             action_taken: "degraded",
-          })
-          // token 超限不重试，直接抛出让上层决策
+          }, traceId)
           throw err
         }
 
-        // 其他错误：不重试
         throw err
       }
     }
-    
-    // 确保 lastError 有值
+
     if (lastError) {
       throw lastError
     }
-    throw new Error(`[Watchdog] ${roleId} failed after ${this.config.max_retries} retries`)
+    throw new Error(`[Watchdog] ${roleId} failed after ${maxAttempts} retries`)
   }
 
   /**
    * 记录异常事件，同时写入磁盘
    */
-  private recordAnomaly(event: Omit<AnomalyEvent, "detected_at">): void {
+  private recordAnomaly(event: Omit<AnomalyEvent, "detected_at">, traceId?: string): void {
     const full: AnomalyEvent = {
       ...event,
       detected_at: new Date().toISOString(),
+      traceId: traceId ?? event.traceId,
     }
     this.anomalyLog.push(full)
     this.writeAnomalyToDisk(full)

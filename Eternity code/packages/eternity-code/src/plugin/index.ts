@@ -18,12 +18,13 @@ export namespace Plugin {
   const log = Log.create({ service: "plugin" })
 
   // Built-in plugins that are directly imported (not installed from npm)
-  const INTERNAL_PLUGINS: PluginInstance[] = [
+  // Use type assertion to handle type incompatibility between local and npm package types
+  const INTERNAL_PLUGINS = [
     CodexAuthPlugin,
     CopilotAuthPlugin,
     GitlabAuthPlugin,
     MetaDesignPlugin,
-  ]
+  ] as unknown as PluginInstance[]
 
   const state = Instance.state(async () => {
     const client = createOpencodeClient({
@@ -43,6 +44,11 @@ export namespace Plugin {
       project: Instance.project,
       worktree: Instance.worktree,
       directory: Instance.directory,
+      experimental_workspace: {
+        register: (_type: string, _adapter: any) => {
+          // Workspace adapter registration - placeholder implementation
+        },
+      },
       get serverUrl(): URL {
         return Server.url ?? new URL("http://localhost:4096")
       },

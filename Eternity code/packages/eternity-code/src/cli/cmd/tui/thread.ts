@@ -14,7 +14,6 @@ import type { EventSource } from "./context/sdk"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
-import { startDashboard } from "@/meta/dashboard/server"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -198,9 +197,6 @@ export const TuiThreadCommand = cmd({
       setTimeout(() => {
         client.call("checkUpgrade", { directory: cwd }).catch(() => {})
       }, 1000).unref?.()
-
-      // Start dashboard server
-      startDashboard(cwd)
 
       try {
         await tui({

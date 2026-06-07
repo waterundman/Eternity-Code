@@ -2,6 +2,7 @@ import * as path from "path"
 import * as fs from "fs"
 import yaml from "js-yaml"
 import { loadMetaDesign } from "./index.js"
+import { extractText } from "./utils/extract-text.js"
 import { parseCardsFromText, writeCard, resolveCard, writeRejectedDirection, updateLoopHistory } from "./cards.js"
 import { planCard, runPlan } from "./execution/index.js"
 import type { MetaDesign, Session } from "./types.js"
@@ -10,6 +11,7 @@ import { assessQuality, formatQualityReport } from "./quality-monitor.js"
 import { loadLoopContext } from "./context-loader.js"
 import { handleRestructureOutput } from "./restructure-handler.js"
 import { handleInsightOutput } from "./insight-handler.js"
+import { generateLoopId } from "./utils/id-generator.js"
 
 // 这个函数会被 command registry 调用
 export async function runMetaLoop(cwd: string, session: Session): Promise<void> {
@@ -21,8 +23,8 @@ export async function runMetaLoop(cwd: string, session: Session): Promise<void> 
   }
 
   // Generate loop id
+  const loopId = generateLoopId()
   const loopNum = (design.loop_history?.total_loops ?? 0) + 1
-  const loopId = `loop-${String(loopNum).padStart(3, "0")}`
 
   // Create loop record
   const loopDir = MetaPaths.loops(cwd)
@@ -43,7 +45,7 @@ export async function runMetaLoop(cwd: string, session: Session): Promise<void> 
   const loopContext = await loadLoopContext(cwd)
 
   // 质量评估
-  const qualityReport = assessQuality(cwd)
+  const qualityReport = await assessQuality(cwd)
   if (qualityReport.should_trigger_sota) {
     console.log(formatQualityReport(qualityReport))
     
@@ -173,22 +175,7 @@ warnings: （接近哪些约束或 NEG，没有写 none）
 在卡片之外不要提出任何代码修改建议。`
 }
 
-function extractText(response: unknown): string {
-  // 根据实际 session API 的返回结构调整
-  if (typeof response === "string") return response
-  if (response && typeof response === "object") {
-    const r = response as Record<string, unknown>
-    if (typeof r.text === "string") return r.text
-    if (typeof r.content === "string") return r.content
-    if (Array.isArray(r.content)) {
-      return r.content
-        .filter((c: unknown) => c && typeof c === "object" && (c as Record<string, unknown>).type === "text")
-        .map((c: unknown) => (c as Record<string, unknown>).text as string)
-        .join("\n")
-    }
-  }
-  return String(response)
-}
+
 
 async function runDecisionFlow(
   cwd: string,

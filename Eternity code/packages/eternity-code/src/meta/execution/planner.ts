@@ -1,13 +1,20 @@
 import * as path from "path"
 import * as fs from "fs"
 import yaml from "js-yaml"
+import type { z } from "zod"
 import type { ExecutionPlan, PlannerOutput } from "./types.js"
 import type { Session } from "../types.js"
+import { extractText } from "../utils/extract-text.js"
 import { loadMetaDesign, buildSystemContext } from "../design.js"
 import { Dispatcher } from "../agents/dispatcher.js"
 import { parsePlan } from "../agents/parsers/plan.js"
 import { getCurrentBranch, getGitHead } from "./git.js"
-import { listMetaEntryNames, resolveMetaDirectory, resolveMetaEntryPath } from "../paths.js"
+import { resolveMetaDirectory, resolveMetaEntryPath } from "../paths.js"
+import { generatePlanId } from "../utils/id-generator.js"
+import { readYamlStrict } from "../utils/schema-validator.js"
+import { MetaDecisionCardSchema } from "../schemas.js"
+
+type MetaDecisionCard = z.infer<typeof MetaDecisionCardSchema>
 
 const PLANNER_SYSTEM_PROMPT = `You are an execution planner for MetaDesign cards.
 
@@ -28,12 +35,11 @@ export async function planCard(
 ): Promise<ExecutionPlan> {
   const design = await loadMetaDesign(cwd)
   const cardPath = resolveMetaEntryPath(cwd, "cards", `${cardId}.yaml`)
-  const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as any
+  const card = readYamlStrict(cardPath, MetaDecisionCardSchema)
 
   const planDir = resolveMetaDirectory(cwd, "plans")
   if (!fs.existsSync(planDir)) fs.mkdirSync(planDir, { recursive: true })
-  const existingPlans = listMetaEntryNames(cwd, "plans", ".yaml").length
-  const planId = `PLAN-${String(existingPlans + 1).padStart(3, "0")}`
+  const planId = generatePlanId()
 
   // 使用 dispatcher 调用 planner 角色
   let parsedPlan: PlannerOutput | undefined
@@ -121,11 +127,10 @@ async function callPlannerAgent(
   }
 }
 
-function buildPlannerPrompt(card: any, planId: string, metaContext: string): string {
-  const objective = String(card.content?.objective ?? "No objective provided")
-  const approach = String(card.content?.approach ?? "No approach provided")
-  const risk = String(card.content?.risk ?? "No risk provided")
-  const scope = Array.isArray(card.content?.scope) ? card.content.scope.join(", ") : "Not specified"
+function buildPlannerPrompt(card: MetaDecisionCard, planId: string, metaContext: string): string {
+  const objective = card.content.objective || "No objective provided"
+  const approach = card.content.approach || "No approach provided"
+  const risk = card.content.risk || "No risk provided"
 
   return `${metaContext}
 
@@ -135,7 +140,6 @@ Create execution plan ${planId} for this accepted MetaDesign card.
 
 Objective: ${objective}
 Approach: ${approach}
-Scope: ${scope}
 Risk: ${risk}
 
 Return only this structure:
@@ -187,21 +191,13 @@ function parsePlanFromText(text: string): PlannerOutput {
   return { interpretation, tasks }
 }
 
-function extractText(response: unknown): string {
-  if (typeof response === "string") return response
-  const value = response as any
-  if (typeof value?.text === "string") return value.text
-  if (Array.isArray(value?.content)) return value.content.map((part: any) => part?.text ?? "").join("\n")
-  return String(response)
-}
 
-function generateMockPlanFromCard(card: any): PlannerOutput {
-  const objective = String(card.content?.objective ?? "Implement the accepted card")
-  const approach = String(card.content?.approach ?? "Apply the accepted improvement")
-  const risk = String(card.content?.risk ?? "Avoid regressions outside the accepted scope")
-  const filesToModify = Array.isArray(card.content?.scope)
-    ? card.content.scope.filter((value: unknown): value is string => typeof value === "string")
-    : []
+
+function generateMockPlanFromCard(card: MetaDecisionCard): PlannerOutput {
+  const objective = card.content.objective || "Implement the accepted card"
+  const approach = card.content.approach || "Apply the accepted improvement"
+  const risk = card.content.risk || "Avoid regressions outside the accepted scope"
+  const filesToModify: string[] = []
 
   return {
     interpretation:

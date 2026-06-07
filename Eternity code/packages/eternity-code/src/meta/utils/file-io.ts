@@ -7,6 +7,7 @@ import { promises as fsPromises } from "fs"
 import * as path from "path"
 import * as fs from "fs"
 import yaml from "js-yaml"
+import type { z } from "zod"
 
 /**
  * 确保目录存在
@@ -30,7 +31,30 @@ export function ensureDirectorySync(dirPath: string): void {
 }
 
 /**
- * 异步读取 YAML 文件
+ * 异步读取 YAML 文件（带 schema 验证）
+ * 使用 zod schema 进行运行时验证，确保类型安全
+ */
+export async function readYamlFileWithValidationAsync<T>(
+  filePath: string,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
+  try {
+    const content = await fsPromises.readFile(filePath, "utf8")
+    const parsed = yaml.load(content)
+    const result = schema.safeParse(parsed)
+    if (result.success) {
+      return result.data
+    }
+    // Schema validation failed, return null for invalid data
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 异步读取 YAML 文件（向后兼容）
+ * @deprecated 使用 readYamlFileWithValidationAsync 进行 schema 验证
  */
 export async function readYamlFileAsync<T>(filePath: string): Promise<T | null> {
   try {

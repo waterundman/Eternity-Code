@@ -58,18 +58,7 @@ export {
   runOptimization,
   applyOptimizations,
 } from "./optimizer.js"
-export { startDashboard } from "./dashboard/server.js"
-export { registerDashboardSessionBridge, getDashboardSessionBridge } from "./dashboard/bridge.js"
-export {
-  loadDashboardBootstrap,
-  computeAgentTaskStats,
-  loadCurrentModel,
-  loadUsageStats,
-  readMetaYamlDirectory,
-  readYamlDirectory,
-  readYamlFile,
-  readJsonFile,
-} from "./dashboard/data.js"
+
 export { loadLoopContext } from "./context-loader.js"
 export {
   loadCurrentBlueprint,
@@ -90,7 +79,7 @@ export {
   buildInsightsContext,
 } from "./insights.js"
 export { buildContextFromCognition } from "./cognition.js"
-export { assessQuality, formatQualityReport } from "./quality-monitor.js"
+export { assessQuality, assessQualitySync, formatQualityReport } from "./quality-monitor.js"
 export { handleInsightOutput, formatInsightResult } from "./insight-handler.js"
 export { handleRestructureOutput, formatRestructureResult } from "./restructure-handler.js"
 export { executeRestructure, formatRestructureExecutionResult } from "./restructure-executor.js"
@@ -107,15 +96,10 @@ export { planCard, runPlan } from "./execution/index.js"
 export { metaInit } from "./init.js"
 export { LoopOrchestrator } from "./orchestrator.js"
 export { loadMetaRuntimeSnapshot, resolveLoop } from "./runtime.js"
-export type { LoopPhase, DecisionCard, LoopDecision, EvaluationResult } from "./orchestrator.js"
+export type { LoopPhase, DecisionCard, LoopDecision, EvaluationResult, LoopOrchestratorOptions } from "./orchestrator.js"
+export type { HandoffExecutionResult } from "./utils/handoff.js"
 export type { MetaRuntimeSnapshot, MetaRuntimeStatus, MetaRuntimePhase } from "./runtime.js"
-export type {
-  DashboardBootstrap,
-  DashboardAgentTaskStats,
-  DashboardCoverageStats,
-  DashboardUsageStats,
-} from "./dashboard/data.js"
-export type { DashboardBridgeStatus, DashboardStartLoopResult, DashboardSessionBridge } from "./dashboard/bridge.js"
+
 export type {
   ContextBudget,
   ContextLayerConfig,
@@ -131,10 +115,27 @@ export type {
 
 // Sub-agent调度层
 export { Dispatcher } from "./agents/dispatcher.js"
-export { registerRole, getRole, listRoles, loadAllRoles } from "./agents/registry.js"
-export { buildAgentContext } from "./agents/context-builder.js"
+export { registerRole, getRole, listRoles, loadAllRoles, getHandoffs, getAgentTools, canHandoffTo, hasAgentTool, listHandoffCapableRoles, listAgentToolCapableRoles } from "./agents/registry.js"
+export { buildAgentContext, buildHandoffContext, injectHandoffIntoPrompt } from "./agents/context-builder.js"
 export type { AgentRole, AgentTask, DispatcherOptions } from "./agents/types.js"
-export type { DispatcherEnhancedOptions } from "./agents/dispatcher.js"
+export type { DispatcherEnhancedOptions, DispatchResult } from "./agents/dispatcher.js"
+
+// Handoff 机制
+export {
+  handoff_to,
+  isHandoffResult,
+  defineHandoff,
+  defineAgentTool,
+  isAgentToolResult,
+  HandoffTrace,
+} from "./agents/handoff.js"
+export type {
+  HandoffResult,
+  HandoffSpec,
+  AgentToolSpec,
+  AgentToolResult,
+  HandoffTraceEntry,
+} from "./agents/handoff.js"
 export type { LoopContext } from "./context-loader.js"
 export type { Blueprint } from "./blueprints.js"
 export type { Insight } from "./insights.js"
@@ -224,6 +225,16 @@ export {
   union,
   safeValidate,
   strictValidate,
+  // Result 类型
+  Ok,
+  Err,
+  isOk,
+  isErr,
+  // Schema 验证
+  readYamlWithValidation,
+  readYamlWithValidationAsync,
+  readYamlStrict,
+  SchemaValidationError,
   // 错误处理
   ErrorCode,
   ErrorSeverity,
@@ -255,6 +266,7 @@ export {
   measured,
   formatMemorySize,
   formatDurationMs,
+  formatDuration,
   generateReport,
   // 通用工具
   extractText,
@@ -264,7 +276,6 @@ export {
   generateShortId,
   truncateString,
   deepMerge,
-  formatDuration,
 } from "./utils/index.js"
 
 export type {
@@ -274,4 +285,27 @@ export type {
   PerformanceMetric,
   MemorySnapshot,
   PerformanceStats,
+  Result,
 } from "./utils/index.js"
+
+// Zod schemas
+export {
+  MetaDesignSchema,
+  MetaRequirementSchema,
+  RejectedDirectionSchema,
+  EvalFactorSchema,
+  MetaDecisionCardSchema,
+  AcceptanceChecklistItemSchema,
+  CardContentSchema,
+  CardPredictionSchema,
+  CardSourceSchema,
+  CardDecisionSchema,
+  ExecutionPlanSchema,
+  ExecutionTaskSchema,
+  TaskPreflightSchema,
+  PlanPreflightSchema,
+  NegativeEntrySchema,
+} from "./schemas.js"
+
+// 终端状态展示
+export { displayLoopStatus, displayAgentStatus, displayWatchdogStatus, handleMetaStatus, handleMetaHistory, handleMetaWatchdog } from "./terminal/index.js"

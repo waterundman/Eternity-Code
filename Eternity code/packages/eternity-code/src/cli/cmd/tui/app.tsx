@@ -43,7 +43,6 @@ import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
-import { registerDashboardSessionBridge } from "@/meta/dashboard/bridge"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -219,7 +218,6 @@ function App() {
   const sync = useSync()
   const exit = useExit()
   const promptRef = usePromptRef()
-  let dashboardLoopStartPending = false
 
   useKeyboard((evt) => {
     if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -350,151 +348,6 @@ function App() {
       }
     })
   })
-
-  function currentRouteInfo() {
-    const routeData = route.data
-    const routeType = routeData.type
-    const sessionID = routeData.type === "session" || routeData.type === "loop" ? routeData.sessionID : undefined
-    const workspaceID =
-      routeData.type === "home"
-        ? routeData.workspaceID
-        : sessionID
-          ? sync.session.get(sessionID)?.workspaceID
-          : undefined
-    const selectedModel = local.model.current()
-    const variant = local.model.variant.current()
-
-    return {
-      routeType,
-      sessionID,
-      workspaceID,
-      agent: local.agent.current().name,
-      model: selectedModel ? `${selectedModel.providerID}/${selectedModel.modelID}` : undefined,
-      variant,
-    }
-  }
-
-  async function ensureDashboardSession() {
-    const info = currentRouteInfo()
-    if (info.sessionID) {
-      return {
-        sessionID: info.sessionID,
-        createdSession: false,
-        info,
-      }
-    }
-
-    const result = await sdk.client.session.create({
-      workspaceID: info.workspaceID,
-    })
-
-    if (result.error || !result.data?.id) {
-      throw new Error(result.error ? String(result.error) : "Failed to create a session for dashboard actions.")
-    }
-
-    return {
-      sessionID: result.data.id,
-      createdSession: true,
-      info: {
-        ...info,
-        sessionID: result.data.id,
-      },
-    }
-  }
-
-  function getDashboardModelOrThrow() {
-    const selectedModel = local.model.current()
-    if (!selectedModel) {
-      throw new Error("Select a model in the TUI before running dashboard actions.")
-    }
-    return selectedModel
-  }
-
-  const unregisterDashboardBridge = registerDashboardSessionBridge(sdk.directory ?? process.cwd(), {
-    getStatus() {
-      const info = currentRouteInfo()
-      return {
-        attached: true,
-        ...info,
-        pendingLoopStart: dashboardLoopStartPending,
-      }
-    },
-    async startLoop() {
-      const { sessionID, createdSession, info } = await ensureDashboardSession()
-      const selectedModel = getDashboardModelOrThrow()
-
-      const sessionStatus = sync.data.session_status?.[sessionID]
-      if (!createdSession && sessionStatus && sessionStatus.type !== "idle") {
-        throw new Error("The active session is still busy. Wait for it to become idle before starting a new loop.")
-      }
-
-      dashboardLoopStartPending = true
-      sdk.client.session
-        .command({
-          sessionID,
-          command: "meta",
-          arguments: "",
-          agent: info.agent,
-          model: `${selectedModel.providerID}/${selectedModel.modelID}`,
-          variant: info.variant,
-        })
-        .then((response) => {
-          if (response.error) {
-            throw new Error(String(response.error))
-          }
-        })
-        .catch((error) => {
-          console.error("[Eternity Code] Dashboard loop start failed:", error)
-        })
-        .finally(() => {
-          dashboardLoopStartPending = false
-        })
-
-      setTimeout(
-        () =>
-          route.navigate({
-            type: "loop",
-            sessionID,
-          }),
-        createdSession ? 50 : 0,
-      )
-
-      return {
-        sessionID,
-        createdSession,
-        routeType: info.routeType,
-        agent: info.agent,
-        model: `${selectedModel.providerID}/${selectedModel.modelID}`,
-        variant: info.variant,
-        message: `Queued /meta in session ${sessionID}.`,
-      }
-    },
-    async prompt(options) {
-      const { sessionID, info } = await ensureDashboardSession()
-      const selectedModel = getDashboardModelOrThrow()
-
-      const response = await sdk.client.session.prompt({
-        sessionID,
-        agent: info.agent,
-        model: selectedModel,
-        variant: info.variant,
-        system: options.system,
-        parts: [
-          {
-            type: "text",
-            text: options.message,
-          },
-        ],
-      })
-
-      if (response.error) {
-        throw new Error(String(response.error))
-      }
-
-      return response.data
-    },
-  })
-  onCleanup(unregisterDashboardBridge)
 
   createEffect(
     on(

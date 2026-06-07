@@ -216,7 +216,7 @@ export function Loop() {
       // Load execution plans if in executing phase
       const targetLoop = runtime.pendingLoop ?? runtime.latestLoop
       if (targetLoop?.execution?.plan_ids?.length) {
-        const plans = loadExecutionPlansForLoop(cwd(), targetLoop.id)
+        const plans = await loadExecutionPlansForLoop(cwd(), targetLoop.id)
         if (plans.length > 0) {
           setCurrentPlan(plans[0])
           setShowTaskPanel(true)

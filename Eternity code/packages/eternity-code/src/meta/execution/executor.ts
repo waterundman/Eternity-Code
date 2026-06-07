@@ -2,16 +2,22 @@ import * as path from "path"
 import * as fs from "fs"
 import yaml from "js-yaml"
 import type { ExecutionPlan, ExecutionTask, TaskResult, PlanResult, ExecutionOptionsBase } from "./types.js"
+import { extractText } from "../utils/extract-text.js"
 import type { Session } from "../types.js"
 import { loadMetaDesign, buildSystemContext } from "../design.js"
 import { updateLoopRollback } from "../loop.js"
 import { branchExists, getCurrentBranch, getGitHead, runGitCommand } from "./git.js"
 import { resolveMetaEntryPath } from "../paths.js"
+import { withFileLock } from "../utils/file-lock.js"
+import { readYamlStrict } from "../utils/schema-validator.js"
+import { ExecutionPlanSchema } from "../schemas.js"
+import type { TraceContext } from "../utils/trace-context.js"
 
 export interface ExecutorOptions extends ExecutionOptionsBase {
   cwd: string
   planId: string
   session?: Session
+  traceContext?: TraceContext
 }
 
 export interface TaskDiff {
@@ -33,6 +39,7 @@ export class ExecutionExecutor {
   private onTaskComplete?: (task: ExecutionTask, result: TaskResult) => void
   private onTaskConfirm?: (task: ExecutionTask, diff: string) => Promise<boolean>
   private onRollback?: (reason: string, error?: string) => void
+  private traceContext?: TraceContext
 
   constructor(options: ExecutorOptions) {
     this.cwd = options.cwd
@@ -46,6 +53,7 @@ export class ExecutionExecutor {
     this.onTaskComplete = options.onTaskComplete
     this.onTaskConfirm = options.onTaskConfirm
     this.onRollback = options.onRollback
+    this.traceContext = options.traceContext
   }
 
   async executePlan(plan: ExecutionPlan): Promise<PlanResult> {
@@ -217,7 +225,7 @@ export class ExecutionExecutor {
         if (this.autoCommit) {
           return {
             success: true,
-            git_sha: this.commitTask(task),
+            git_sha: await this.commitTask(task),
           }
         }
       }
@@ -289,14 +297,16 @@ export class ExecutionExecutor {
   }
 
   private async generateDiffForFile(task: ExecutionTask, filePath: string, _plan: ExecutionPlan): Promise<string> {
-    if (this.session) {
-      try {
-        const design = await loadMetaDesign(this.cwd)
-        const metaContext = design ? buildSystemContext(design) : ""
-        const currentContent = fs.readFileSync(path.resolve(this.cwd, filePath), "utf8")
-        const mustNotList = task.spec.must_not.map((item) => `- ${item}`).join("\n")
+    if (!this.session) {
+      throw new Error(`Cannot generate diff for ${filePath}: no LLM session available. Please configure a model provider.`)
+    }
 
-        const systemPrompt = `${metaContext}
+    const design = await loadMetaDesign(this.cwd)
+    const metaContext = design ? buildSystemContext(design) : ""
+    const currentContent = fs.readFileSync(path.resolve(this.cwd, filePath), "utf8")
+    const mustNotList = task.spec.must_not.map((item) => `- ${item}`).join("\n")
+
+    const systemPrompt = `${metaContext}
 
 You are a code editing agent. Generate a precise unified diff for the requested file change.
 Rules:
@@ -306,7 +316,7 @@ Rules:
 4. Ensure the change satisfies definition_of_done.
 5. Only modify the requested file.`
 
-        const userMessage = `Current file: ${filePath}
+    const userMessage = `Current file: ${filePath}
 
 \`\`\`
 ${currentContent}
@@ -319,32 +329,23 @@ Must not:
 ${mustNotList}
 `
 
-        const response = await this.callSession(systemPrompt, userMessage)
-        if (response) {
-          return this.extractDiffFromResponse(response)
-        }
-      } catch (error) {
-        console.warn(`[Executor] LLM diff generation failed for ${filePath}:`, error)
-      }
+    const response = await this.callSession(systemPrompt, userMessage)
+    if (!response) {
+      throw new Error(`Cannot generate diff for ${filePath}: LLM returned empty response.`)
     }
-
-    const currentContent = fs.readFileSync(path.resolve(this.cwd, filePath), "utf8")
-    return `--- a/${filePath}
-+++ b/${filePath}
-@@ -1,3 +1,4 @@
- ${currentContent.split("\n").slice(0, 3).join("\n")}
-+// Modified by ${task.id}: ${task.spec.title}
-`
+    return this.extractDiffFromResponse(response)
   }
 
   private async generateNewFileContent(task: ExecutionTask, filePath: string, _plan: ExecutionPlan): Promise<string> {
-    if (this.session) {
-      try {
-        const design = await loadMetaDesign(this.cwd)
-        const metaContext = design ? buildSystemContext(design) : ""
-        const mustNotList = task.spec.must_not.map((item) => `- ${item}`).join("\n")
+    if (!this.session) {
+      throw new Error(`Cannot generate content for ${filePath}: no LLM session available. Please configure a model provider.`)
+    }
 
-        const systemPrompt = `${metaContext}
+    const design = await loadMetaDesign(this.cwd)
+    const metaContext = design ? buildSystemContext(design) : ""
+    const mustNotList = task.spec.must_not.map((item) => `- ${item}`).join("\n")
+
+    const systemPrompt = `${metaContext}
 
 You are a code generation agent. Generate the complete content for a new file.
 Rules:
@@ -353,7 +354,7 @@ Rules:
 3. Ensure the file satisfies definition_of_done.
 4. Follow the existing project style.`
 
-        const userMessage = `Create a new file: ${filePath}
+    const userMessage = `Create a new file: ${filePath}
 
 Task: ${task.spec.title}
 Description: ${task.spec.description}
@@ -362,53 +363,31 @@ Must not:
 ${mustNotList}
 `
 
-        const response = await this.callSession(systemPrompt, userMessage)
-        if (response) {
-          return this.extractContentFromResponse(response)
-        }
-      } catch (error) {
-        console.warn(`[Executor] LLM content generation failed for ${filePath}:`, error)
-      }
+    const response = await this.callSession(systemPrompt, userMessage)
+    if (!response) {
+      throw new Error(`Cannot generate content for ${filePath}: LLM returned empty response.`)
+    }
+    return this.extractContentFromResponse(response)
+  }
+
+  private async callSession(systemPrompt: string, userMessage: string): Promise<string> {
+    if (this.session?.createSubtask) {
+      const result = await this.session.createSubtask({ systemPrompt, userMessage })
+      return extractText(result)
     }
 
-    return `// Created by ${task.id}: ${task.spec.title}
-// ${task.spec.description}
-
-export function ${task.spec.title.replace(/\s+/g, "")}() {
-  // Implementation here
-}
-`
-  }
-
-  private async callSession(systemPrompt: string, userMessage: string): Promise<string | undefined> {
-    try {
-      if (this.session?.createSubtask) {
-        const result = await this.session.createSubtask({ systemPrompt, userMessage })
-        return this.extractText(result)
-      }
-
-      if (this.session?.prompt) {
-        const result = await this.session.prompt({
-          system: systemPrompt,
-          message: userMessage,
-        })
-        return this.extractText(result)
-      }
-
-      return undefined
-    } catch (error) {
-      console.error("[Executor] Failed to call session:", error)
-      return undefined
+    if (this.session?.prompt) {
+      const result = await this.session.prompt({
+        system: systemPrompt,
+        message: userMessage,
+      })
+      return extractText(result)
     }
+
+    throw new Error("No LLM session available. Please configure a model provider.")
   }
 
-  private extractText(response: unknown): string {
-    if (typeof response === "string") return response
-    const value = response as any
-    if (typeof value?.text === "string") return value.text
-    if (Array.isArray(value?.content)) return value.content.map((part: any) => part?.text ?? "").join("\n")
-    return String(response)
-  }
+
 
   private extractDiffFromResponse(response: string): string {
     const fenced = response.match(/```diff\n([\s\S]*?)\n```/)
@@ -449,16 +428,39 @@ export function ${task.spec.title.replace(/\s+/g, "")}() {
 
   private applyDiffLines(originalLines: string[], diffLines: string[]): string[] {
     const result = [...originalLines]
+    let offset = 0
+    let originalPos = 0
 
     for (const line of diffLines) {
-      if (line.startsWith("+") && !line.startsWith("+++")) {
-        result.push(line.substring(1))
+      if (line.startsWith("---") || line.startsWith("+++")) {
         continue
       }
+
+      const hunkMatch = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
+      if (hunkMatch) {
+        originalPos = parseInt(hunkMatch[1], 10) - 1 + offset
+        continue
+      }
+
       if (line.startsWith("-") && !line.startsWith("---")) {
-        const content = line.substring(1)
-        const index = result.findIndex((item) => item.includes(content))
-        if (index !== -1) result.splice(index, 1)
+        const content = line.slice(1)
+        if (originalPos < result.length && result[originalPos] === content) {
+          result.splice(originalPos, 1)
+          offset--
+        }
+        continue
+      }
+
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        result.splice(originalPos, 0, line.slice(1))
+        originalPos++
+        offset++
+        continue
+      }
+
+      if (line.startsWith(" ") || line === "") {
+        originalPos++
+        continue
       }
     }
 
@@ -473,12 +475,16 @@ export function ${task.spec.title.replace(/\s+/g, "")}() {
     runGitCommand(this.cwd, ["checkout", this.branchName])
   }
 
-  private commitTask(task: ExecutionTask): string {
-    runGitCommand(this.cwd, ["add", "."])
+  private async commitTask(task: ExecutionTask): Promise<string> {
+    const gitLockPath = path.join(this.cwd, ".meta", ".git-lock")
 
-    const commitMessage = `[${task.plan_id}] ${task.spec.title}\n\n${task.spec.description}\n\nTask: ${task.id}`
-    runGitCommand(this.cwd, ["commit", "-m", commitMessage])
-    return getGitHead(this.cwd)
+    return withFileLock(gitLockPath, async () => {
+      runGitCommand(this.cwd, ["add", "."])
+
+      const commitMessage = `[${task.plan_id}] ${task.spec.title}\n\n${task.spec.description}\n\nTask: ${task.id}`
+      runGitCommand(this.cwd, ["commit", "-m", commitMessage])
+      return getGitHead(this.cwd)
+    })
   }
 
   private topologicalSort(tasks: ExecutionTask[]): ExecutionTask[] {
@@ -520,7 +526,7 @@ export function ${task.spec.title.replace(/\s+/g, "")}() {
     if (!fs.existsSync(planPath)) {
       throw new Error(`Plan not found: ${this.planId}`)
     }
-    return yaml.load(fs.readFileSync(planPath, "utf8")) as ExecutionPlan
+    return readYamlStrict(planPath, ExecutionPlanSchema)
   }
 
   private persistPlan(plan: ExecutionPlan): void {
@@ -588,5 +594,5 @@ function loadExecutionPlan(cwd: string, planId: string): ExecutionPlan {
   if (!fs.existsSync(planPath)) {
     throw new Error(`Plan not found: ${planId}`)
   }
-  return yaml.load(fs.readFileSync(planPath, "utf8")) as ExecutionPlan
+  return readYamlStrict(planPath, ExecutionPlanSchema)
 }

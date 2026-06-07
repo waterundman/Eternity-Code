@@ -86,3 +86,53 @@ export function buildAgentContext(
   parts.push("=== End MetaDesign Context ===\n")
   return parts.join("\n")
 }
+
+/**
+ * 构建 handoff 场景的上下文注入
+ *
+ * 当 Agent 被 handoff 唤醒时，注入来源 Agent 传递的 context_variables
+ * 以及 handoff 原因，帮助目标 Agent 快速理解切换背景。
+ */
+export function buildHandoffContext(
+  sourceRoleId: string,
+  contextVariables: Record<string, unknown>,
+  reason: string,
+  handoffChain: string[],
+): string {
+  const parts: string[] = ["=== Handoff Context ==="]
+
+  parts.push(`Source agent: ${sourceRoleId}`)
+
+  if (reason) {
+    parts.push(`Handoff reason: ${reason}`)
+  }
+
+  if (handoffChain.length > 1) {
+    parts.push(`Handoff chain: ${handoffChain.join(" → ")}`)
+  }
+
+  if (Object.keys(contextVariables).length > 0) {
+    parts.push("\nTransferred context variables:")
+    for (const [key, value] of Object.entries(contextVariables)) {
+      const formatted = typeof value === "string" ? value : JSON.stringify(value, null, 2)
+      parts.push(`  ${key}: ${formatted}`)
+    }
+  }
+
+  parts.push("=== End Handoff Context ===\n")
+  return parts.join("\n")
+}
+
+/**
+ * 将 handoff context 合并到 agent 的 system prompt 前部
+ */
+export function injectHandoffIntoPrompt(
+  systemPrompt: string,
+  sourceRoleId: string,
+  contextVariables: Record<string, unknown>,
+  reason: string,
+  handoffChain: string[],
+): string {
+  const handoffCtx = buildHandoffContext(sourceRoleId, contextVariables, reason, handoffChain)
+  return `${handoffCtx}\n\n${systemPrompt}`
+}

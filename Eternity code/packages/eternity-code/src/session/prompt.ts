@@ -2117,7 +2117,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       })
     }
 
-    const targetLoop = findLatestAcceptedLoop(Instance.directory)
+    const targetLoop = await findLatestAcceptedLoop(Instance.directory)
     const acceptedCards = targetLoop?.decision_session?.accepted_cards ?? []
     if (!targetLoop?.id || acceptedCards.length === 0) {
       return finishLocalCommand(input, ctx, {
@@ -2182,7 +2182,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     const optimization = await runOptimization(Instance.directory, design)
     await applyOptimizations(Instance.directory, design, optimization)
 
-    const latestLoop = loadLoopRecords(Instance.directory)[0]
+    const latestLoop = (await loadLoopRecords(Instance.directory))[0]
     const summary = `Optimization applied: ${optimization.recommendations.length} recommendations, ${optimization.unlockedNegs.length} negatives unlocked`
     if (latestLoop?.id) {
       await updateLoopCloseSummary(Instance.directory, latestLoop.id, summary)
@@ -2239,7 +2239,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         cwd: Instance.directory,
         session: createLocalMetaSession(input, ctx),
       })
-      const quality = assessQuality(Instance.directory)
+      const quality = await assessQuality(Instance.directory)
       const parsed = await dispatcher.dispatchRestructure(
         quality.should_trigger_sota ? "quality_threshold" : "manual",
       )

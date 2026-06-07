@@ -15,6 +15,7 @@ import type {
 } from "./execution/types.js"
 import { findLatestAcceptedLoop, loadLoopCards, loadLoopRecords, updateLoopExecutionPlan } from "./loop.js"
 import { listMetaEntryPaths, resolveMetaDirectory, resolveMetaEntryPath } from "./paths.js"
+import { readYamlFileAsync } from "./utils/file-io.js"
 
 const PREVIEW_LIMIT = 5
 const GLOB_PATTERN = /[*?[\]{}]/
@@ -29,20 +30,24 @@ export interface ExecutePlanningResult {
   preflight: ExecutionPreflightSummary
 }
 
-export function loadExecutionPlans(cwd: string): ExecutionPlan[] {
-  return listMetaEntryPaths(cwd, "plans", ".yaml")
-    .map((filePath) => readYamlFile<ExecutionPlan>(filePath))
-    .filter((plan): plan is ExecutionPlan => Boolean(plan?.id))
-    .sort((a, b) => {
-      const timeA = a.created_at ?? ""
-      const timeB = b.created_at ?? ""
-      if (timeA !== timeB) return timeB.localeCompare(timeA)
-      return b.id.localeCompare(a.id)
-    })
+export async function loadExecutionPlans(cwd: string): Promise<ExecutionPlan[]> {
+  const filePaths = listMetaEntryPaths(cwd, "plans", ".yaml")
+  const plans: ExecutionPlan[] = []
+  for (const filePath of filePaths) {
+    const plan = await readYamlFileAsync<ExecutionPlan>(filePath)
+    if (plan?.id) plans.push(plan)
+  }
+  return plans.sort((a, b) => {
+    const timeA = a.created_at ?? ""
+    const timeB = b.created_at ?? ""
+    if (timeA !== timeB) return timeB.localeCompare(timeA)
+    return b.id.localeCompare(a.id)
+  })
 }
 
-export function loadExecutionPlansForLoop(cwd: string, loopId: string): ExecutionPlan[] {
-  return loadExecutionPlans(cwd).filter((plan) => plan.loop_id === loopId)
+export async function loadExecutionPlansForLoop(cwd: string, loopId: string): Promise<ExecutionPlan[]> {
+  const plans = await loadExecutionPlans(cwd)
+  return plans.filter((plan) => plan.loop_id === loopId)
 }
 
 export async function planAcceptedCardsForLoop(
@@ -50,11 +55,12 @@ export async function planAcceptedCardsForLoop(
   options: {
     loopId?: string
     session?: import("./types.js").Session
+    traceContext?: import("./utils/trace-context.js").TraceContext
   } = {},
 ): Promise<ExecutePlanningResult> {
   const targetLoop = options.loopId
-    ? loadLoopRecords(cwd).find((loop) => loop.id === options.loopId)
-    : findLatestAcceptedLoop(cwd)
+    ? (await loadLoopRecords(cwd)).find((loop) => loop.id === options.loopId)
+    : await findLatestAcceptedLoop(cwd)
   if (!targetLoop?.id) {
     throw new Error(options.loopId ? `Loop not found: ${options.loopId}` : "No accepted loop found")
   }
@@ -64,14 +70,14 @@ export async function planAcceptedCardsForLoop(
     throw new Error(`No accepted cards found for ${targetLoop.id}`)
   }
 
-  const cards = loadLoopCards(cwd, targetLoop)
+  const cards = await loadLoopCards(cwd, targetLoop)
   const cardIds = new Set(cards.map((card) => card.id))
   const missingCards = acceptedCards.filter((cardId) => !cardIds.has(cardId))
   if (missingCards.length > 0) {
     throw new Error(`Accepted cards missing on disk: ${missingCards.join(", ")}`)
   }
 
-  const existingPlans = loadExecutionPlans(cwd)
+  const existingPlans = await loadExecutionPlans(cwd)
   const createdPlans: ExecutionPlan[] = []
   const reusedPlans: ExecutionPlan[] = []
 
@@ -447,11 +453,6 @@ function uniqueStrings(values: string[]) {
 
 function toPortablePath(value: string) {
   return value.replaceAll("\\", "/")
-}
-
-function readYamlFile<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null
-  return yaml.load(fs.readFileSync(filePath, "utf8")) as T
 }
 
 // ============================================================================

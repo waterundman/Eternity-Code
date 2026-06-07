@@ -1,11 +1,17 @@
 import * as fs from "fs"
-import yaml from "js-yaml"
+import * as yaml from "js-yaml"
 import type { MetaDesign } from "./types.js"
 import { resolveMetaDesignPath } from "./paths.js"
 import { buildInsightsContext } from "./insights.js"
 import { buildBlueprintContext } from "./blueprints.js"
+import { readYamlWithValidation, readYamlStrict } from "./utils/schema-validator.js"
+import { MetaDesignSchema } from "./schemas.js"
+import { acquireLock, releaseLock, withFileLock } from "./utils/file-lock.js"
+
+const DesignPassthroughSchema = MetaDesignSchema.passthrough()
 
 export type { MetaDesign } from "./types.js"
+export { acquireLock, releaseLock, withFileLock }
 
 /**
  * Load .meta/design/design.yaml from the given working directory.
@@ -16,13 +22,12 @@ export async function loadMetaDesign(cwd: string): Promise<MetaDesign | null> {
   const designPath = resolveMetaDesignPath(cwd)
   if (!fs.existsSync(designPath)) return null
 
-  try {
-    const raw = fs.readFileSync(designPath, "utf8")
-    return yaml.load(raw) as MetaDesign
-  } catch (e) {
-    console.warn("[MetaDesign] Failed to parse design.yaml:", e)
+  const result = readYamlWithValidation(designPath, MetaDesignSchema)
+  if (result.ok === false) {
+    console.warn("[MetaDesign] Failed to validate design.yaml:", result.error.format())
     return null
   }
+  return result.value
 }
 
 /**
@@ -114,4 +119,33 @@ export function buildSystemContext(design: MetaDesign, cwd?: string): string {
 function coverageBar(coverage: number): string {
   const filled = Math.round(coverage * 8)
   return "#".repeat(filled) + "-".repeat(8 - filled)
+}
+
+/**
+ * 在文件锁保护下写入 design.yaml
+ * 先获取锁，写入后释放，异常时确保锁被释放
+ */
+export async function writeDesignYaml(cwd: string, data: unknown): Promise<void> {
+  const designPath = resolveMetaDesignPath(cwd)
+  await withFileLock(designPath, async () => {
+    const content = yaml.dump(data, { lineWidth: 100 })
+    await fs.promises.writeFile(designPath, content, "utf8")
+  })
+}
+
+/**
+ * 在文件锁保护下读取-修改-写入 design.yaml
+ * 回调函数接收当前设计数据，返回修改后的数据
+ */
+export async function updateDesignYaml(
+  cwd: string,
+  updater: (current: MetaDesign) => MetaDesign,
+): Promise<void> {
+  const designPath = resolveMetaDesignPath(cwd)
+  await withFileLock(designPath, async () => {
+    const current = readYamlStrict(designPath, DesignPassthroughSchema) as MetaDesign
+    const updated = updater(current)
+    const newContent = yaml.dump(updated, { lineWidth: 100 })
+    await fs.promises.writeFile(designPath, newContent, "utf8")
+  })
 }

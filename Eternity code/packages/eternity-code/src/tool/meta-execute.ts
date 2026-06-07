@@ -96,7 +96,7 @@ export const MetaExecuteTool = Tool.define("meta_execute", {
       }
 
       case "status": {
-        const targetLoop = resolveLoop(cwd, params.loopId)
+        const targetLoop = await resolveLoop(cwd, params.loopId)
 
         if (!targetLoop) {
           return {
@@ -106,7 +106,7 @@ export const MetaExecuteTool = Tool.define("meta_execute", {
           }
         }
 
-        const plans = loadExecutionPlansForLoop(cwd, targetLoop.id)
+        const plans = await loadExecutionPlansForLoop(cwd, targetLoop.id)
         const planIds = plans.map((plan) => plan.id)
         const preflightStatus = targetLoop.execution?.preflight_status ?? "unknown"
         const readyPlans = plans.filter((plan) => plan.preflight?.status === "ready").length
@@ -134,7 +134,7 @@ export const MetaExecuteTool = Tool.define("meta_execute", {
         })
 
         // Step 1: 获取最新的 accepted loop
-        const targetLoop = resolveLoop(cwd, params.loopId)
+        const targetLoop = await resolveLoop(cwd, params.loopId)
         if (!targetLoop) {
           return {
             title: "No accepted loop found",
@@ -144,7 +144,7 @@ export const MetaExecuteTool = Tool.define("meta_execute", {
         }
 
         // Step 2: 生成执行计划（如果没有的话）
-        let plans = loadExecutionPlansForLoop(cwd, targetLoop.id)
+        let plans = await loadExecutionPlansForLoop(cwd, targetLoop.id)
 
         if (plans.length === 0) {
           const planningResult = await planAcceptedCardsForLoop(cwd, {

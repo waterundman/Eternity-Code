@@ -126,12 +126,13 @@ type InternalLayerState = {
 }
 
 /**
- * Estimate token count using a lightweight character heuristic.
+ * Estimate token count with improved accuracy for code content.
+ * Code has higher token density than prose: symbols and punctuation each produce tokens.
  */
 export function estimateTokens(text: string): number {
-  const englishChars = text.replace(/[^\x00-\x7F]/g, "").length
-  const nonEnglishChars = text.length - englishChars
-  return Math.ceil(englishChars / 4 + nonEnglishChars / 2)
+  const words = text.split(/\s+/).filter((w) => w.length > 0).length
+  const symbols = (text.match(/[{}()\[\];=:,.<>!&|+\-*/]/g) ?? []).length
+  return Math.ceil(words * 1.3 + symbols * 0.5)
 }
 
 /**
@@ -206,21 +207,18 @@ export class ContextMixer {
 
     const candidates: Array<LongTermMemory["results"][number] & { mtimeMs: number }> = []
     for (const filePath of collectSearchFiles(metaDir)) {
-      try {
-        const content = fs.readFileSync(filePath, "utf8")
-        const relevance = scoreContent(content, keywords)
-        if (relevance <= 0) continue
+      const cached = getCachedFileContent(filePath)
+      if (!cached) continue
 
-        const stat = fs.statSync(filePath)
-        candidates.push({
-          content: extractRelevantSnippet(content, keywords, 700),
-          source: path.relative(cwd, filePath).replace(/\\/g, "/"),
-          relevance,
-          mtimeMs: stat.mtimeMs,
-        })
-      } catch {
-        continue
-      }
+      const relevance = scoreContent(cached.content, keywords)
+      if (relevance <= 0) continue
+
+      candidates.push({
+        content: extractRelevantSnippet(cached.content, keywords, 700),
+        source: path.relative(cwd, filePath).replace(/\\/g, "/"),
+        relevance,
+        mtimeMs: cached.mtimeMs,
+      })
     }
 
     const results = candidates
@@ -518,20 +516,74 @@ function extractRelevantSnippet(content: string, keywords: string[], maxLength: 
   return content.slice(start, end)
 }
 
+const MAX_COLLECT_FILES = 100
+const RECENT_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+
+const fileContentCache = new Map<string, { content: string; mtimeMs: number }>()
+
+function getCachedFileContent(filePath: string): { content: string; mtimeMs: number } | null {
+  const cached = fileContentCache.get(filePath)
+  if (cached) {
+    try {
+      const stat = fs.statSync(filePath)
+      if (stat.mtimeMs === cached.mtimeMs) return cached
+    } catch {
+      fileContentCache.delete(filePath)
+      return null
+    }
+  }
+
+  try {
+    const stat = fs.statSync(filePath)
+    const content = fs.readFileSync(filePath, "utf8")
+    const entry = { content, mtimeMs: stat.mtimeMs }
+    fileContentCache.set(filePath, entry)
+    if (fileContentCache.size > MAX_COLLECT_FILES * 2) {
+      const first = fileContentCache.keys().next().value
+      if (first !== undefined) fileContentCache.delete(first)
+    }
+    return entry
+  } catch {
+    return null
+  }
+}
+
 function collectSearchFiles(dir: string): string[] {
   const results: string[] = []
+  const cutoff = Date.now() - RECENT_DAYS_MS
 
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      results.push(...collectSearchFiles(fullPath))
-      continue
+  function walk(currentDir: string): void {
+    if (results.length >= MAX_COLLECT_FILES) return
+
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    } catch {
+      return
     }
 
-    if (/\.(ya?ml|md)$/i.test(entry.name)) {
+    for (const entry of entries) {
+      if (results.length >= MAX_COLLECT_FILES) return
+
+      const fullPath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath)
+        continue
+      }
+
+      if (!/\.(ya?ml|md)$/i.test(entry.name)) continue
+
+      try {
+        const stat = fs.statSync(fullPath)
+        if (stat.mtimeMs < cutoff) continue
+      } catch {
+        continue
+      }
+
       results.push(fullPath)
     }
   }
 
+  walk(dir)
   return results
 }

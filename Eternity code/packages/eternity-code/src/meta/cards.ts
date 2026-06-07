@@ -3,18 +3,16 @@ import * as fs from "fs"
 import yaml from "js-yaml"
 import type { RawCard, CardDecision, RejectedDirection, MetaDesign } from "./types.js"
 import { MetaPaths, resolveMetaDesignPath, resolveMetaDirectory, resolveMetaEntryPath } from "./paths.js"
+import { readYamlStrict } from "./utils/schema-validator.js"
+import { updateDesignYaml } from "./design.js"
+import { generateCardId, generateNegId } from "./utils/id-generator.js"
+import { MetaDecisionCardSchema, MetaDesignSchema, NegativeEntrySchema } from "./schemas.js"
+
+const CardPassthroughSchema = MetaDecisionCardSchema.passthrough()
+const DesignPassthroughSchema = MetaDesignSchema.passthrough()
+const NegativePassthroughSchema = NegativeEntrySchema.passthrough()
 
 export const DEFAULT_CARD_TEMPLATE_ID = "meta-default-card-template"
-
-// ── Card ID management ──────────────────────────────────────
-
-function nextId(dir: string, prefix: string): string {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-  const files = fs.readdirSync(dir).filter((f) => f.startsWith(prefix) && f.endsWith(".yaml"))
-  const nums = files.map((f) => parseInt(f.replace(prefix, "").replace(".yaml", ""), 10)).filter((n) => !isNaN(n))
-  const next = nums.length ? Math.max(...nums) + 1 : 1
-  return `${prefix}${String(next).padStart(3, "0")}`
-}
 
 // ── Parse cards from model output ──────────────────────────
 
@@ -43,8 +41,9 @@ export function parseCardsFromText(text: string): RawCard[] {
       }
 
       if (card.objective) cards.push(card)
-    } catch {
-      // malformed card block: skip
+    } catch (err) {
+      console.warn(`[cards] Failed to parse card block: ${err instanceof Error ? err.message : String(err)}`)
+      console.warn(`[cards] Raw content: ${content.slice(0, 200)}...`)
     }
   }
 
@@ -70,7 +69,7 @@ export async function writeCard(
   } = {},
 ): Promise<string> {
   const dir = resolveMetaDirectory(cwd, "cards")
-  const id = nextId(dir, "CARD-")
+  const id = generateCardId()
   const cardPath = path.join(dir, `${id}.yaml`)
 
   const cardObj = {
@@ -118,9 +117,9 @@ export async function resolveCard(
   const cardPath = resolveMetaEntryPath(cwd, "cards", `${cardId}.yaml`)
   if (!fs.existsSync(cardPath)) throw new Error(`Card not found: ${cardId}`)
 
-  const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as Record<string, unknown>
+  const card = readYamlStrict(cardPath, CardPassthroughSchema) as Record<string, unknown>
   const currentDecision = (card.decision as Record<string, unknown> | undefined) ?? {}
-  ;(card as Record<string, unknown>).decision = {
+  card.decision = {
     status: decision.status,
     note: decision.note ?? null,
     chosen_by: decision.chosen_by ?? currentDecision.chosen_by ?? null,
@@ -139,40 +138,35 @@ export async function writeRejectedDirection(
   cardReason: string,
   note: string
 ): Promise<string> {
-  const designPath = resolveMetaDesignPath(cwd)
   const negDir = MetaPaths.negatives(cwd)
-
-  // Load current design
-  const designRaw = fs.readFileSync(designPath, "utf8")
-  const design = yaml.load(designRaw) as Record<string, unknown>
 
   // Generate NEG id
   if (!fs.existsSync(negDir)) fs.mkdirSync(negDir, { recursive: true })
-  const negId = nextId(negDir, "NEG-")
+  const negId = generateNegId()
 
   const negEntry = {
     id: negId,
     text: cardObjective,
     reason: note || cardReason,
-    scope: { type: "conditional", condition: null, until_phase: null },
+    scope: { type: "conditional" as const, condition: undefined as string | undefined, until_phase: undefined as string | undefined },
     source_card: cardId,
     created_at: new Date().toISOString(),
-    status: "active",
-    lifted_at: null,
-    lifted_note: null,
+    status: "active" as const,
   }
 
-  // Write individual NEG file
+  // Write individual NEG file (includes lifted_at/lifted_note for negatives/ directory)
+  const negFileEntry = { ...negEntry, lifted_at: null, lifted_note: null }
   const negPath = path.join(negDir, `${negId}.yaml`)
-  fs.writeFileSync(negPath, yaml.dump(negEntry, { lineWidth: 100 }))
+  fs.writeFileSync(negPath, yaml.dump(negFileEntry, { lineWidth: 100 }))
 
-  // Append to design.yaml rejected_directions
-  const rejected = (design.rejected_directions as unknown[]) ?? []
-  rejected.push(negEntry)
-  design.rejected_directions = rejected
-  design.updated_at = new Date().toISOString()
-
-  fs.writeFileSync(designPath, yaml.dump(design, { lineWidth: 100 }))
+  // Update design.yaml with file lock protection
+  await updateDesignYaml(cwd, (design) => {
+    const rejected = design.rejected_directions ?? []
+    rejected.push(negEntry)
+    design.rejected_directions = rejected
+    design.updated_at = new Date().toISOString()
+    return design
+  })
 
   return negId
 }
@@ -188,58 +182,50 @@ export async function updateLoopHistory(
   cardsRejected: number,
   summary: string
 ): Promise<void> {
-  const designPath = resolveMetaDesignPath(cwd)
-  
-  // Load current design
-  const designRaw = fs.readFileSync(designPath, "utf8")
-  const design = yaml.load(designRaw) as Record<string, unknown>
-  
-  // Initialize loop_history if not exists
-  if (!design.loop_history) {
-    design.loop_history = {
-      total_loops: 0,
-      last_loop_id: "",
-      last_loop_at: "",
-      loops: [],
+  await updateDesignYaml(cwd, (design) => {
+    if (!design.loop_history) {
+      design.loop_history = {
+        total_loops: 0,
+        last_loop_id: "",
+        last_loop_at: "",
+        loops: [],
+      }
     }
-  }
-  
-  const history = design.loop_history as Record<string, unknown>
 
-  // Update history, but avoid duplicating the same loop on repeated writes.
-  const loops = ((history.loops as Record<string, unknown>[]) ?? []).slice()
-  const existingIndex = loops.findIndex((loop) => loop.loop_id === loopId)
-  if (existingIndex === -1) {
-    history.total_loops = Number(history.total_loops ?? 0) + 1
-  } else {
-    history.total_loops = Math.max(Number(history.total_loops ?? 0), loops.length)
-  }
-  history.last_loop_id = loopId
-  history.last_loop_at = new Date().toISOString()
-
-  const nextLoop = {
-    loop_id: loopId,
-    status,
-    cards_proposed: cardsProposed,
-    cards_accepted: cardsAccepted,
-    cards_rejected: cardsRejected,
-    composite_score_delta: 0,
-    summary,
-  }
-  if (existingIndex === -1) {
-    loops.push(nextLoop)
-  } else {
-    loops[existingIndex] = {
-      ...loops[existingIndex],
-      ...nextLoop,
+    const history = design.loop_history
+    const loops = (history.loops ?? []).slice()
+    const existingIndex = loops.findIndex((loop) => loop.loop_id === loopId)
+    if (existingIndex === -1) {
+      history.total_loops = (history.total_loops ?? 0) + 1
+    } else {
+      history.total_loops = Math.max(history.total_loops ?? 0, loops.length)
     }
-  }
-  history.loops = loops
-  
-  design.loop_history = history
-  design.updated_at = new Date().toISOString()
-  
-  fs.writeFileSync(designPath, yaml.dump(design, { lineWidth: 100 }))
+    history.last_loop_id = loopId
+    history.last_loop_at = new Date().toISOString()
+
+    const nextLoop = {
+      loop_id: loopId,
+      status,
+      cards_proposed: cardsProposed,
+      cards_accepted: cardsAccepted,
+      cards_rejected: cardsRejected,
+      composite_score_delta: 0,
+      summary,
+    }
+    if (existingIndex === -1) {
+      loops.push(nextLoop)
+    } else {
+      loops[existingIndex] = {
+        ...loops[existingIndex],
+        ...nextLoop,
+      }
+    }
+    history.loops = loops
+
+    design.loop_history = history
+    design.updated_at = new Date().toISOString()
+    return design
+  })
 }
 
 // ── Negative Space Intelligent Management ──────────────────
@@ -322,13 +308,18 @@ export function analyzeNegativeUnlockability(
 /**
  * 评估negative条件
  */
-function evaluateNegativeCondition(condition: string, design: MetaDesign): boolean {
-  // 解析简单条件表达式
-  const conditions: Record<string, () => boolean> = {
-    "monthly_active_users > 1000": () => {
-      // 假设有用户指标
-      return false // 默认不满足
-    },
+export function evaluateNegativeCondition(condition: string, design: MetaDesign): boolean {
+  const stage = design.project.stage
+
+  // 标准条件映射
+  const standardConditions: Record<string, () => boolean> = {
+    "always": () => true,
+    "never": () => false,
+    "prototype_complete": () => stage === "mvp" || stage === "growth" || stage === "mature",
+    "mvp_complete": () => stage === "growth" || stage === "mature",
+    "growth_complete": () => stage === "mature",
+    "re_evaluation_required": () => true,
+    "monthly_active_users > 1000": () => false,
     "total_loops > 10": () => {
       const totalLoops = design.loop_history?.total_loops ?? 0
       return totalLoops > 10
@@ -337,22 +328,37 @@ function evaluateNegativeCondition(condition: string, design: MetaDesign): boole
       const loops = design.loop_history?.loops ?? []
       if (loops.length < 5) return false
       const recentLoops = loops.slice(-5)
-      const avgAcceptance = recentLoops.reduce((sum, l) => 
+      const avgAcceptance = recentLoops.reduce((sum, l) =>
         sum + ((l.cards_accepted ?? 0) / (l.cards_proposed ?? 1)), 0
       ) / recentLoops.length
       return avgAcceptance > 0.7
     },
-    "re_evaluation_required": () => true, // 总是满足
   }
 
-  // 尝试匹配条件
-  for (const [pattern, evaluator] of Object.entries(conditions)) {
-    if (condition.includes(pattern) || condition === pattern) {
+  // 精确匹配标准条件
+  if (standardConditions[condition]) {
+    return standardConditions[condition]()
+  }
+
+  // 模糊匹配（兼容旧格式）
+  for (const [pattern, evaluator] of Object.entries(standardConditions)) {
+    if (condition.includes(pattern)) {
       return evaluator()
     }
   }
 
-  // 默认不满足
+  // 支持参数化条件：total_loops > N
+  const totalLoopsMatch = condition.match(/total_loops\s*>\s*(\d+)/)
+  if (totalLoopsMatch) {
+    const threshold = parseInt(totalLoopsMatch[1])
+    const totalLoops = design.loop_history?.total_loops ?? 0
+    return totalLoops > threshold
+  }
+
+  // 非标准条件 - 记录警告并返回 false
+  console.warn(`[negatives] Unknown condition format: "${condition}". Returning false.`)
+  console.warn(`[negatives] Valid conditions: ${Object.keys(standardConditions).join(", ")}`)
+
   return false
 }
 
@@ -417,37 +423,33 @@ export async function unlockNegative(
   negId: string,
   reason: string
 ): Promise<void> {
-  const designPath = MetaPaths.design(cwd)
   const negDir = MetaPaths.negatives(cwd)
   
   // 更新design.yaml
-  const designRaw = fs.readFileSync(designPath, "utf8")
-  const design = yaml.load(designRaw) as Record<string, unknown>
-  
-  const rejected = (design.rejected_directions as any[]) ?? []
-  const negIndex = rejected.findIndex(n => n.id === negId)
-  
-  if (negIndex === -1) {
-    throw new Error(`Negative not found: ${negId}`)
-  }
-  
-  rejected[negIndex] = {
-    ...rejected[negIndex],
-    status: "lifted",
-    lifted_at: new Date().toISOString(),
-    lifted_note: reason,
-  }
-  
-  design.rejected_directions = rejected
-  design.updated_at = new Date().toISOString()
-  
-  fs.writeFileSync(designPath, yaml.dump(design, { lineWidth: 100 }))
+  await updateDesignYaml(cwd, (design) => {
+    const rejected = design.rejected_directions ?? []
+    const negIndex = rejected.findIndex(n => n.id === negId)
+    
+    if (negIndex === -1) {
+      throw new Error(`Negative not found: ${negId}`)
+    }
+    
+    rejected[negIndex] = {
+      ...rejected[negIndex],
+      status: "lifted",
+      lifted_at: new Date().toISOString(),
+      lifted_note: reason,
+    } as RejectedDirection & { lifted_at: string; lifted_note: string }
+    
+    design.rejected_directions = rejected
+    design.updated_at = new Date().toISOString()
+    return design
+  })
   
   // 更新negatives目录中的文件
   const negPath = path.join(negDir, `${negId}.yaml`)
   if (fs.existsSync(negPath)) {
-    const negRaw = fs.readFileSync(negPath, "utf8")
-    const neg = yaml.load(negRaw) as Record<string, unknown>
+    const neg = readYamlStrict(negPath, NegativePassthroughSchema) as Record<string, unknown>
     
     neg.status = "lifted"
     neg.lifted_at = new Date().toISOString()

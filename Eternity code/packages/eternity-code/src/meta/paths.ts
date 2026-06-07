@@ -32,6 +32,7 @@ export const MetaPaths = {
   reports: (cwd: string) => path.join(cwd, ".meta", "reports"),
   feedback: (cwd: string) => path.join(cwd, ".meta", "feedback"),
   context: (cwd: string) => path.join(cwd, ".meta", "context"),
+  provenance: (cwd: string) => path.join(cwd, ".meta", "provenance"),
 
   // Legacy layout
   legacyDesign: (cwd: string) => path.join(cwd, ".meta", "design.yaml"),

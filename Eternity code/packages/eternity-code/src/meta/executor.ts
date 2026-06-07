@@ -3,6 +3,10 @@ import * as fs from "fs"
 import yaml from "js-yaml"
 import type { RawCard } from "./types.js"
 import { resolveMetaEntryPath } from "./paths.js"
+import { readYamlStrict } from "./utils/schema-validator.js"
+import { MetaDecisionCardSchema } from "./schemas.js"
+
+const CardPassthroughSchema = MetaDecisionCardSchema.passthrough()
 
 export interface CardScope {
   cardId: string
@@ -27,32 +31,32 @@ export function analyzeCardScope(cwd: string, cardId: string): CardScope {
     throw new Error(`Card not found: ${cardId}`)
   }
   
-  const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as any
-  const content = card.content
+  const card = readYamlStrict(cardPath, CardPassthroughSchema) as Record<string, unknown>
+  const content = card.content as Record<string, unknown> | undefined
   
   // 从卡片内容中提取 scope 信息
   const files: string[] = []
   const directories: string[] = []
   
   // 分析 approach 字段，提取可能的文件路径
-  const approach = content.approach || ""
+  const approach = String(content?.approach ?? "")
   const fileMatches = approach.match(/(?:src|lib|packages?)\/[\w\/]+\.\w+/g) || []
   files.push(...fileMatches)
   
   // 分析 objective 字段
-  const objective = content.objective || ""
+  const objective = String(content?.objective ?? "")
   
   // 从 req_refs 推断可能的模块
-  const reqRefs = card.req_refs || []
+  const reqRefs = (card.req_refs as string[]) || []
   
   // 如果卡片有明确的 scope 字段
-  if (content.scope) {
+  if (content?.scope) {
     if (Array.isArray(content.scope)) {
       for (const scope of content.scope) {
-        if (scope.includes(".")) {
-          files.push(scope)
+        if (String(scope).includes(".")) {
+          files.push(String(scope))
         } else {
-          directories.push(scope)
+          directories.push(String(scope))
         }
       }
     } else if (typeof content.scope === "string") {

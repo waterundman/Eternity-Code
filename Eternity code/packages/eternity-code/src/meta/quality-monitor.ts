@@ -5,6 +5,8 @@
 import * as fs from "fs"
 import { listMetaEntryPaths } from "./paths.js"
 import { loadLoopRecords } from "./loop.js"
+import { readYamlFileSync } from "./utils/file-io.js"
+import type { MetaLoopRecord } from "./loop.js"
 
 export interface QualityReport {
   should_trigger_sota: boolean
@@ -33,12 +35,15 @@ const DEFAULT_THRESHOLDS: QualityThresholds = {
   problems_count: 3,
 }
 
-export function assessQuality(cwd: string, thresholds: Partial<QualityThresholds> = {}): QualityReport {
+export async function assessQuality(cwd: string, thresholds: Partial<QualityThresholds> = {}): Promise<QualityReport> {
   const mergedThresholds = { ...DEFAULT_THRESHOLDS, ...thresholds }
   const triggered: string[] = []
   const logFiles = listMetaEntryPaths(cwd, "logs", ".md").sort().reverse()
 
-  const recentLogs = logFiles.slice(0, 3).map((filePath) => fs.readFileSync(filePath, "utf8"))
+  const maxLogsNeeded = Math.max(3, 5)
+  const logContents = logFiles.slice(0, maxLogsNeeded).map((filePath) => fs.readFileSync(filePath, "utf8"))
+
+  const recentLogs = logContents.slice(0, 3)
   const techDebtItems = recentLogs.map((log) => {
     const section = log.split("## 技术债记录")[1]?.split("##")[0] ?? ""
     return section.split("\n").filter((line) => line.startsWith("- ")).length
@@ -48,7 +53,7 @@ export function assessQuality(cwd: string, thresholds: Partial<QualityThresholds
     triggered.push(`tech_debt_density: ${avgDebt.toFixed(1)} > ${mergedThresholds.tech_debt_density}`)
   }
 
-  const loops = loadLoopRecords(cwd)
+  const loops = await loadLoopRecords(cwd)
   const recent5 = loops.slice(0, 5)
   const rollbacks = recent5.filter((loop) => loop.status === "rolled_back").length
   const rollbackRate = rollbacks / (recent5.length || 1)
@@ -58,10 +63,80 @@ export function assessQuality(cwd: string, thresholds: Partial<QualityThresholds
     )
   }
 
-  const allLogsText = logFiles
-    .slice(0, 5)
-    .map((filePath) => fs.readFileSync(filePath, "utf8"))
-    .join("\n")
+  const allLogsText = logContents.join("\n")
+  const logLines = allLogsText.split("\n").filter((line) => line.startsWith("- "))
+
+  const todoCount = logLines.filter((line) => line.includes("技术债")).length
+  if (todoCount > mergedThresholds.todo_count) {
+    triggered.push(`todo_count: ${todoCount} > ${mergedThresholds.todo_count}`)
+  }
+
+  const incompleteCount = logLines.filter((line) => line.includes("未完成")).length
+  if (incompleteCount > mergedThresholds.incomplete_count) {
+    triggered.push(`incomplete_count: ${incompleteCount} > ${mergedThresholds.incomplete_count}`)
+  }
+
+  const problemsCount = logLines.filter((line) => line.includes("问题")).length
+  if (problemsCount > mergedThresholds.problems_count) {
+    triggered.push(`problems_count: ${problemsCount} > ${mergedThresholds.problems_count}`)
+  }
+
+  return {
+    should_trigger_sota: triggered.length > 0,
+    triggered_by: triggered,
+    tech_debt_density: avgDebt,
+    rollback_rate: rollbackRate,
+    todo_count: todoCount,
+    incomplete_count: incompleteCount,
+    problems_count: problemsCount,
+    timestamp: new Date().toISOString(),
+  }
+}
+
+/**
+ * 同步版本的 assessQuality，用于无法使用 async 的场景（如 getter 属性）
+ */
+export function assessQualitySync(cwd: string, thresholds: Partial<QualityThresholds> = {}): QualityReport {
+  const mergedThresholds = { ...DEFAULT_THRESHOLDS, ...thresholds }
+  const triggered: string[] = []
+  const logFiles = listMetaEntryPaths(cwd, "logs", ".md").sort().reverse()
+
+  const maxLogsNeeded = Math.max(3, 5)
+  const logContents = logFiles.slice(0, maxLogsNeeded).map((filePath) => fs.readFileSync(filePath, "utf8"))
+
+  const recentLogs = logContents.slice(0, 3)
+  const techDebtItems = recentLogs.map((log) => {
+    const section = log.split("## 技术债记录")[1]?.split("##")[0] ?? ""
+    return section.split("\n").filter((line) => line.startsWith("- ")).length
+  })
+  const avgDebt = techDebtItems.reduce((sum, value) => sum + value, 0) / (techDebtItems.length || 1)
+  if (avgDebt > mergedThresholds.tech_debt_density) {
+    triggered.push(`tech_debt_density: ${avgDebt.toFixed(1)} > ${mergedThresholds.tech_debt_density}`)
+  }
+
+  const filePaths = listMetaEntryPaths(cwd, "loops", ".yaml")
+  const loops: MetaLoopRecord[] = []
+  for (const filePath of filePaths) {
+    const record = readYamlFileSync<MetaLoopRecord>(filePath)
+    if (record?.id) loops.push(record)
+  }
+  loops.sort((a, b) => {
+    const seqA = a.sequence ?? 0
+    const seqB = b.sequence ?? 0
+    if (seqA !== seqB) return seqB - seqA
+    return b.id.localeCompare(a.id)
+  })
+
+  const recent5 = loops.slice(0, 5)
+  const rollbacks = recent5.filter((loop) => loop.status === "rolled_back").length
+  const rollbackRate = rollbacks / (recent5.length || 1)
+  if (rollbackRate > mergedThresholds.rollback_rate) {
+    triggered.push(
+      `rollback_rate: ${(rollbackRate * 100).toFixed(0)}% > ${(mergedThresholds.rollback_rate * 100).toFixed(0)}%`,
+    )
+  }
+
+  const allLogsText = logContents.join("\n")
   const logLines = allLogsText.split("\n").filter((line) => line.startsWith("- "))
 
   const todoCount = logLines.filter((line) => line.includes("技术债")).length

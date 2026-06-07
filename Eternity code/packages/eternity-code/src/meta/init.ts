@@ -3,6 +3,8 @@ import fs from "fs/promises"
 import yaml from "js-yaml"
 import type { MetaDesign } from "./types.js"
 import { MetaPaths } from "./paths.js"
+import { readYamlWithValidationAsync } from "./utils/schema-validator.js"
+import { MetaDesignSchema } from "./schemas.js"
 
 type MetaStage = MetaDesign["project"]["stage"]
 
@@ -204,14 +206,10 @@ async function inferProjectContext(cwd: string, options: MetaInitOptions) {
 }
 
 async function loadExistingDesign(designPath: string): Promise<MetaDesign | null> {
-  try {
-    const content = await fs.readFile(designPath, "utf8")
-    return yaml.load(content) as MetaDesign
-  } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException
-    if (nodeError.code === "ENOENT") return null
-    throw error
-  }
+  const result = await readYamlWithValidationAsync(designPath, MetaDesignSchema)
+  if (result.ok === true) return result.value
+  console.warn("[init] Failed to validate design.yaml:", result.error.format())
+  return null
 }
 
 async function readPackageJson(cwd: string): Promise<any | null> {

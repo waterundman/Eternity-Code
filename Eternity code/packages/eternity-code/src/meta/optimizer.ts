@@ -3,6 +3,11 @@ import * as fs from "fs"
 import yaml from "js-yaml"
 import type { MetaDesign, RejectedDirection } from "./types.js"
 import { listMetaEntryPaths, resolveMetaDesignPath } from "./paths.js"
+import { evaluateNegativeCondition } from "./cards.js"
+import { readYamlStrict } from "./utils/schema-validator.js"
+import { MetaDecisionCardSchema } from "./schemas.js"
+
+const CardPassthroughSchema = MetaDecisionCardSchema.passthrough()
 
 export interface LoopStats {
   loopId: string
@@ -81,7 +86,7 @@ export function analyzeSourceAcceptance(cwd: string, design: MetaDesign): Source
   const sourceMap: Record<string, { total: number; accepted: number }> = {}
 
   for (const cardPath of cardPaths) {
-    const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as any
+    const card = readYamlStrict(cardPath, CardPassthroughSchema) as Record<string, unknown>
     
     // 从卡片的 req_refs 推断来源
     const source = inferCardSource(card)
@@ -92,7 +97,8 @@ export function analyzeSourceAcceptance(cwd: string, design: MetaDesign): Source
     
     sourceMap[source].total++
     
-    if (card.decision?.status === "accepted") {
+    const decision = card.decision as Record<string, unknown> | undefined
+    if (decision?.status === "accepted") {
       sourceMap[source].accepted++
     }
   }
@@ -332,8 +338,7 @@ export function checkUnlockableNegs(design: MetaDesign): string[] {
     
     // 检查条件性 NEG
     if (neg.scope?.type === "conditional" && neg.scope.condition) {
-      // 简单条件评估
-      if (evaluateCondition(neg.scope.condition, design)) {
+      if (evaluateNegativeCondition(neg.scope.condition, design)) {
         unlocked.push(neg.id)
       }
     }
@@ -347,28 +352,6 @@ export function checkUnlockableNegs(design: MetaDesign): string[] {
   }
   
   return unlocked
-}
-
-/**
- * 评估条件
- */
-function evaluateCondition(condition: string, design: MetaDesign): boolean {
-  // 简单条件评估
-  // 在实际实现中，这里会解析条件表达式
-  
-  // 示例条件: "monthly_active_users > 1000"
-  // 示例条件: "total_loops > 10"
-  
-  if (condition.includes("total_loops")) {
-    const match = condition.match(/total_loops\s*>\s*(\d+)/)
-    if (match) {
-      const threshold = parseInt(match[1])
-      const totalLoops = design.loop_history?.total_loops ?? 0
-      return totalLoops > threshold
-    }
-  }
-  
-  return false
 }
 
 /**
@@ -397,12 +380,15 @@ export async function updateRequirementCoverage(
     let coverageBoost = 0
     
     for (const cardPath of cardPaths) {
-      const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as any
+      const card = readYamlStrict(cardPath, CardPassthroughSchema) as Record<string, unknown>
       
       // 检查卡片是否关联到这个需求
-      if (card.req_refs?.includes(req.id) && card.decision?.status === "accepted") {
+      const reqRefs = card.req_refs as string[] | undefined
+      const decision = card.decision as Record<string, unknown> | undefined
+      const outcome = card.outcome as Record<string, unknown> | undefined
+      if (reqRefs?.includes(req.id) && decision?.status === "accepted") {
         // 如果卡片被执行且成功，增加覆盖度
-        if (card.outcome?.status === "success") {
+        if (outcome?.status === "success") {
           coverageBoost += 0.1 // 每个成功执行的卡片增加 10% 覆盖度
         }
       }

@@ -1,3 +1,4 @@
+import * as fs from "fs"
 import { Installation } from "@/installation"
 import { Provider } from "@/provider/provider"
 import { Log } from "@/util/log"
@@ -27,6 +28,27 @@ import { loadMetaDesign, buildSystemContext } from "../meta/index.js"
 export namespace LLM {
   const log = Log.create({ service: "llm" })
   export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+
+  let designCache: { cwd: string; mtimeMs: number; result: ReturnType<typeof loadMetaDesign> extends Promise<infer R> ? R : never } | null = null
+
+  async function loadMetaDesignCached(cwd: string) {
+    const { resolveMetaDesignPath } = await import("../meta/paths.js")
+    const designPath = resolveMetaDesignPath(cwd)
+    let mtimeMs = 0
+    try {
+      mtimeMs = fs.statSync(designPath).mtimeMs
+    } catch {
+      return null
+    }
+
+    if (designCache && designCache.cwd === cwd && designCache.mtimeMs === mtimeMs) {
+      return designCache.result
+    }
+
+    const result = await loadMetaDesign(cwd)
+    designCache = { cwd, mtimeMs, result }
+    return result
+  }
 
   export type StreamInput = {
     user: MessageV2.User
@@ -95,7 +117,7 @@ export namespace LLM {
     }
 
     // Inject MetaDesign context if available
-    const metaDesign = await loadMetaDesign(Instance.directory)
+    const metaDesign = await loadMetaDesignCached(Instance.directory)
     if (metaDesign) {
       system.push(buildSystemContext(metaDesign))
     }

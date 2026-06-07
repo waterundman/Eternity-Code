@@ -4,7 +4,6 @@ import path from "path"
 import yaml from "js-yaml"
 import { tmpdir } from "../fixture/fixture"
 import { loadLoopContext } from "../../src/meta/context-loader"
-import { loadDashboardBootstrap } from "../../src/meta/dashboard/data"
 import { loadMetaRuntimeSnapshot } from "../../src/meta/runtime"
 
 describe("DIR_SPEC compatibility", () => {
@@ -145,12 +144,10 @@ describe("DIR_SPEC compatibility", () => {
     })
 
     const runtime = await loadMetaRuntimeSnapshot(tmp.path)
-    const dashboard = await loadDashboardBootstrap(tmp.path)
     const loopContext = await loadLoopContext(tmp.path)
 
     expect(runtime.latestLoop?.id).toBe("loop-001")
     expect(runtime.acceptedPlans.map((plan) => plan.id)).toEqual(["PLAN-001"])
-    expect(dashboard.agentTasks.map((task) => task.id)).toEqual(["task-001"])
     expect(loopContext.blueprint?.version).toBe("v1")
     expect(loopContext.insights.map((insight) => insight.id)).toEqual(["INS-001"])
     expect(loopContext.negatives.map((negative) => negative.id)).toEqual(["NEG-001"])

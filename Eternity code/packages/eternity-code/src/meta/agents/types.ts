@@ -3,6 +3,7 @@
  */
 
 import type { Session } from "../types.js"
+import type { HandoffSpec, AgentToolSpec } from "./handoff.js"
 
 export interface AgentRole {
   id: string
@@ -22,6 +23,8 @@ export interface AgentRole {
   output_parser: string
   timeout_ms?: number
   tools?: string[]  // 允许使用的工具列表，如 ["bash", "read"]
+  handoffs?: HandoffSpec[]  // 可转移的目标 Agent
+  agent_tools?: AgentToolSpec[]  // 可作为工具调用的 Agent
 }
 
 export interface AgentTask {
@@ -36,6 +39,8 @@ export interface AgentTask {
   started_at?: string
   completed_at?: string
   duration_ms?: number
+  trace_id?: string
+  span_id?: string
 }
 
 export interface DispatcherOptions {

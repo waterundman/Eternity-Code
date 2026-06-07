@@ -334,8 +334,8 @@ Your task is to:
 `
           try {
             // Load quality report
-            const { assessQuality } = require("../meta/quality-monitor.js")
-            const report = assessQuality(Instance.directory)
+            const { assessQualitySync } = require("../meta/quality-monitor.js")
+            const report = assessQualitySync(Instance.directory)
             
             context += `Quality Report:\n`
             context += `Tech debt density: ${report.tech_debt_density.toFixed(1)} items/loop\n`

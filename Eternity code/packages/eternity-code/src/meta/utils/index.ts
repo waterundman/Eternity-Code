@@ -36,6 +36,18 @@ export {
   validateYamlContent,
 } from "./validation.js"
 
+// Result 类型
+export { Ok, Err, isOk, isErr } from "./result.js"
+export type { Result } from "./result.js"
+
+// Schema 验证
+export {
+  readYamlWithValidation,
+  readYamlWithValidationAsync,
+  readYamlStrict,
+  SchemaValidationError,
+} from "./schema-validator.js"
+
 // 错误处理
 export {
   ErrorCode,
@@ -66,6 +78,22 @@ export {
   throttle,
 } from "./resource-manager.js"
 
+// 文件锁
+export {
+  acquireLock,
+  releaseLock,
+  withFileLock,
+} from "./file-lock.js"
+export type { LockOptions } from "./file-lock.js"
+
+// ID 生成器
+export {
+  generateCardId,
+  generatePlanId,
+  generateNegId,
+  generateLoopId,
+} from "./id-generator.js"
+
 // 性能监控
 export {
   PerformanceMonitor,
@@ -77,23 +105,42 @@ export {
   generateReport,
 } from "./performance.js"
 
+// Handoff 工具
+export {
+  MAX_HANDOFF_DEPTH,
+  MAX_VISITS_PER_ROLE,
+  createHandoffExecutor,
+  validateHandoffRoute,
+  isHandoffCycle,
+  isHandoffDepthExceeded,
+} from "./handoff.js"
+export type { HandoffExecutionResult, HandoffExecutorOptions, HandoffExecutor } from "./handoff.js"
+
+// TraceContext 工具
+export {
+  createTraceContext,
+  createChildTraceContext,
+  propagateTraceContext,
+  extractTraceContext,
+  withBaggage,
+  createTraceContextFromHandoff,
+  hasTraceContext,
+} from "./trace-context.js"
+export type { TraceContext, TraceContextOptions, TraceContextFields } from "./trace-context.js"
+
 // 类型定义
 export type { ValidationResult, Validator } from "./validation.js"
 export type { Disposable } from "./resource-manager.js"
 export type { PerformanceMetric, MemorySnapshot, PerformanceStats } from "./performance.js"
 
-/**
- * 提取文本内容（从各种响应格式中）
- */
-export function extractText(response: unknown): string {
-  if (typeof response === "string") return response
-  const result = response as any
-  if (typeof result?.text === "string") return result.text
-  if (Array.isArray(result?.content)) {
-    return result.content.map((item: any) => item?.text ?? "").join("\n")
-  }
-  return String(response)
-}
+export { extractText } from "./extract-text.js"
+
+// 日志工具
+export { createLogger } from "./logger.js"
+export type { Logger, LogLevel } from "./logger.js"
+
+// 统一可观测性上下文
+export { ObservabilityContext } from "./observability-context.js"
 
 /**
  * 稳定哈希（用于参数去重，不需要密码学强度）
@@ -208,3 +255,84 @@ export function formatDuration(ms: number): string {
   if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
   return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`
 }
+
+// 统一数据导出
+export {
+  UnifiedExporter,
+  getGlobalExporter,
+  initGlobalExporter,
+  setGlobalExporter,
+  createFilterFromTraceContext,
+  mergeQueryResults,
+} from "./unified-exporter.js"
+export type {
+  UnifiedRecordType,
+  UnifiedRecordBase,
+  LogRecord,
+  PerformanceRecord,
+  HandoffRecord,
+  ProvenanceRecord,
+  SystemRecord,
+  UnifiedRecord,
+  CreateUnifiedRecord,
+  UnifiedQueryFilter,
+  UnifiedQueryResult,
+  UnifiedExporterConfig,
+} from "./unified-exporter.js"
+
+// 语义图
+export {
+  SemanticGraph,
+  getGlobalGraph,
+  initGlobalGraph,
+  setGlobalGraph,
+  createEntityTypeFilter,
+  createRelationTypeFilter,
+  createTraceIdFilter,
+} from "./semantic-graph.js"
+export type {
+  EntityType,
+  RelationType,
+  Entity,
+  Relation,
+  GraphQueryFilter,
+  GraphQueryResult,
+  GraphStats,
+} from "./semantic-graph.js"
+
+// Provenance 工具
+export {
+  ProvenanceTracker,
+  getGlobalTracker,
+  initGlobalTracker,
+  setGlobalTracker,
+} from "./provenance.js"
+export type { ProvenanceTrackerConfig } from "./provenance.js"
+
+// 信任链验证
+export {
+  TrustChain,
+  createTrustChain,
+  validateTrustChain,
+} from "./trust-chain.js"
+export type {
+  TrustChainConfig,
+  ValidationSeverity,
+  ValidationIssue,
+  TrustChainValidationResult,
+  AnomalyDetectionResult,
+} from "./trust-chain.js"
+
+// 审计报告
+export {
+  AuditReportGenerator,
+  createAuditReportGenerator,
+  generateAuditReport,
+} from "./audit-report.js"
+export type {
+  AuditReportConfig,
+  AuditReportFilter,
+  AuditReportData,
+  AuditReportStats,
+  TimelineEntry,
+} from "./audit-report.js"

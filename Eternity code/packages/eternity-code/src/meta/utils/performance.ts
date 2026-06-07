@@ -1,7 +1,13 @@
 /**
  * 性能监控模块
  * 提供操作计时、内存监控和性能指标收集
+ *
+ * 支持 TraceContext 集成，所有性能指标可关联到链路追踪。
  */
+
+import { promises as fs } from "node:fs"
+import * as path from "node:path"
+import type { TraceContext } from "./trace-context.js"
 
 /**
  * 性能指标
@@ -12,6 +18,8 @@ export interface PerformanceMetric {
   timestamp: string
   success: boolean
   metadata?: Record<string, unknown>
+  traceId?: string
+  spanId?: string
 }
 
 /**
@@ -42,6 +50,18 @@ export interface PerformanceStats {
 }
 
 /**
+ * 持久化配置
+ */
+export interface PersistenceConfig {
+  /** 是否启用自动保存 */
+  enabled: boolean
+  /** 保存目录路径 */
+  directory: string
+  /** 自动保存间隔（毫秒），0 表示立即保存 */
+  intervalMs?: number
+}
+
+/**
  * 性能监控器
  */
 export class PerformanceMonitor {
@@ -49,16 +69,24 @@ export class PerformanceMonitor {
   private memorySnapshots: MemorySnapshot[] = []
   private readonly maxMetrics: number
   private readonly maxSnapshots: number
+  private readonly persistence: PersistenceConfig | undefined
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingSave = false
 
-  constructor(options?: { maxMetrics?: number; maxSnapshots?: number }) {
+  constructor(options?: {
+    maxMetrics?: number
+    maxSnapshots?: number
+    persistence?: PersistenceConfig
+  }) {
     this.maxMetrics = options?.maxMetrics ?? 1000
     this.maxSnapshots = options?.maxSnapshots ?? 100
+    this.persistence = options?.persistence
   }
 
   /**
    * 记录性能指标
    */
-  record(metric: Omit<PerformanceMetric, "timestamp">): void {
+  record(metric: Omit<PerformanceMetric, "timestamp"> & { traceId?: string; spanId?: string }): void {
     this.metrics.push({
       ...metric,
       timestamp: new Date().toISOString(),
@@ -68,15 +96,20 @@ export class PerformanceMonitor {
     if (this.metrics.length > this.maxMetrics) {
       this.metrics = this.metrics.slice(-this.maxMetrics)
     }
+
+    this.scheduleSave()
   }
 
   /**
    * 测量异步操作性能
+   *
+   * @param traceContext 可选的 TraceContext，注入后指标自动携带 traceId/spanId
    */
   async measure<T>(
     name: string,
     operation: () => Promise<T>,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    traceContext?: TraceContext,
   ): Promise<T> {
     const start = performance.now()
     let success = true
@@ -89,17 +122,27 @@ export class PerformanceMonitor {
       throw error
     } finally {
       const duration = performance.now() - start
-      this.record({ name, duration, success, metadata })
+      this.record({
+        name,
+        duration,
+        success,
+        metadata,
+        traceId: traceContext?.traceId,
+        spanId: traceContext?.spanId,
+      })
     }
   }
 
   /**
    * 测量同步操作性能
+   *
+   * @param traceContext 可选的 TraceContext，注入后指标自动携带 traceId/spanId
    */
   measureSync<T>(
     name: string,
     operation: () => T,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    traceContext?: TraceContext,
   ): T {
     const start = performance.now()
     let success = true
@@ -112,7 +155,14 @@ export class PerformanceMonitor {
       throw error
     } finally {
       const duration = performance.now() - start
-      this.record({ name, duration, success, metadata })
+      this.record({
+        name,
+        duration,
+        success,
+        metadata,
+        traceId: traceContext?.traceId,
+        spanId: traceContext?.spanId,
+      })
     }
   }
 
@@ -152,6 +202,7 @@ export class PerformanceMonitor {
       this.memorySnapshots = this.memorySnapshots.slice(-this.maxSnapshots)
     }
 
+    this.scheduleSave()
     return snapshot
   }
 
@@ -250,6 +301,108 @@ export class PerformanceMonitor {
   }
 
   /**
+   * 调度自动保存
+   */
+  private scheduleSave(): void {
+    if (!this.persistence?.enabled) return
+
+    const intervalMs = this.persistence.intervalMs ?? 0
+
+    if (intervalMs === 0) {
+      // 立即保存（异步）
+      this.performSave()
+      return
+    }
+
+    // 防抖保存
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+    }
+
+    this.pendingSave = true
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.pendingSave = false
+      this.performSave()
+    }, intervalMs)
+  }
+
+  /**
+   * 执行保存操作
+   */
+  private async performSave(): Promise<void> {
+    if (!this.persistence?.enabled) return
+
+    try {
+      await this.saveToDirectory(this.persistence.directory)
+    } catch (error) {
+      // 保存失败不应影响主流程
+      console.error("[PerformanceMonitor] Failed to save metrics:", error)
+    }
+  }
+
+  /**
+   * 保存指标到指定目录
+   */
+  async saveToDirectory(directory: string): Promise<void> {
+    await fs.mkdir(directory, { recursive: true })
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+
+    // 保存性能指标
+    if (this.metrics.length > 0) {
+      const metricsFile = path.join(directory, `metrics-${timestamp}.jsonl`)
+      await this.writeJSONL(metricsFile, this.metrics)
+    }
+
+    // 保存内存快照
+    if (this.memorySnapshots.length > 0) {
+      const memoryFile = path.join(directory, `memory-${timestamp}.jsonl`)
+      await this.writeJSONL(memoryFile, this.memorySnapshots)
+    }
+  }
+
+  /**
+   * 导出为 JSONL 格式
+   */
+  async exportJSONL(filePath: string): Promise<void> {
+    const dir = path.dirname(filePath)
+    await fs.mkdir(dir, { recursive: true })
+
+    const data = {
+      exportedAt: new Date().toISOString(),
+      metrics: this.metrics,
+      memorySnapshots: this.memorySnapshots,
+      stats: this.getStats(),
+    }
+
+    await fs.writeFile(filePath, JSON.stringify(data) + "\n", "utf-8")
+  }
+
+  /**
+   * 写入 JSONL 文件
+   */
+  private async writeJSONL(filePath: string, records: unknown[]): Promise<void> {
+    const lines = records.map(record => JSON.stringify(record)).join("\n") + "\n"
+    await fs.writeFile(filePath, lines, "utf-8")
+  }
+
+  /**
+   * 立即刷新待保存的数据
+   */
+  async flush(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = null
+    }
+
+    if (this.pendingSave) {
+      this.pendingSave = false
+      await this.performSave()
+    }
+  }
+
+  /**
    * 导出指标为 JSON
    */
   export(): {
@@ -283,6 +436,18 @@ export function getGlobalMonitor(): PerformanceMonitor {
   if (!globalMonitor) {
     globalMonitor = new PerformanceMonitor()
   }
+  return globalMonitor
+}
+
+/**
+ * 初始化全局性能监控器（带配置）
+ */
+export function initGlobalMonitor(options?: {
+  maxMetrics?: number
+  maxSnapshots?: number
+  persistence?: PersistenceConfig
+}): PerformanceMonitor {
+  globalMonitor = new PerformanceMonitor(options)
   return globalMonitor
 }
 

@@ -18,6 +18,7 @@ export interface AnomalyEvent {
   agent_role: string
   loop_id?: string
   task_id?: string
+  traceId?: string
   detail: string
   tool_call_count?: number
   repeated_call?: {

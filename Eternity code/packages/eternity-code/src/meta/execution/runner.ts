@@ -9,7 +9,7 @@ import { executePlan } from "./executor.js"
  * routing all plan execution through ExecutionExecutor so plan state,
  * rollback behavior, and task persistence stay consistent.
  */
-export async function runPlan(cwd: string, planId: string, session?: Session): Promise<PlanResult> {
+export async function runPlan(cwd: string, planId: string, session?: Session, traceContext?: import("../utils/trace-context.js").TraceContext): Promise<PlanResult> {
   if (!session) {
     return {
       success: false,
@@ -24,5 +24,6 @@ export async function runPlan(cwd: string, planId: string, session?: Session): P
     session,
     autoCommit: true,
     autoRollback: true,
+    traceContext,
   })
 }

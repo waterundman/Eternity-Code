@@ -2,18 +2,28 @@ import * as path from "path"
 import * as fs from "fs"
 import yaml from "js-yaml"
 import type { EvalFactor, MetaDesign, Session } from "./types.js"
+import { extractText } from "./utils/extract-text.js"
 import { Dispatcher } from "./agents/dispatcher.js"
 import { parseEvalScore } from "./agents/parsers/eval-score.js"
 import { MetaPaths, resolveMetaDesignPath, resolveMetaEntryPath } from "./paths.js"
+import { readYamlStrict } from "./utils/schema-validator.js"
+import { MetaDecisionCardSchema, MetaDesignSchema } from "./schemas.js"
+import { createLogger } from "./utils/logger.js"
+import type { TraceContext } from "./utils/trace-context.js"
+
+const CardPassthroughSchema = MetaDecisionCardSchema.passthrough()
+const DesignPassthroughSchema = MetaDesignSchema.passthrough()
+const logger = createLogger("evaluator")
 
 export interface EvalResult {
   factorId: string
   factorName: string
   valueBefore: string
   valueAfter: string
-  normalizedScore: number
+  normalizedScore: number | null
   passedFloor: boolean
   delta: number
+  traceId?: string
 }
 
 export interface EvaluationOutput {
@@ -31,11 +41,12 @@ export interface EvaluationOutput {
 export async function runEvalFactor(
   cwd: string,
   factor: EvalFactor,
-  session?: Session
+  session?: Session,
+  traceContext?: TraceContext
 ): Promise<EvalResult> {
   const valueBefore = factor.threshold.baseline
-  let valueAfter: string
-  let normalizedScore: number
+  let valueAfter: string | null
+  let normalizedScore: number | null
 
   switch (factor.measurement.type) {
     case "metric":
@@ -45,11 +56,10 @@ export async function runEvalFactor(
 
     case "llm_eval":
       valueAfter = await runLlmEval(cwd, factor.measurement, session)
-      normalizedScore = calculateNormalizedScore(valueAfter, factor.threshold)
+      normalizedScore = valueAfter !== null ? calculateNormalizedScore(valueAfter, factor.threshold) : null
       break
 
     case "human_eval":
-      // 人类评估需要交互，暂时返回 baseline
       valueAfter = valueBefore
       normalizedScore = 0.5
       break
@@ -59,17 +69,18 @@ export async function runEvalFactor(
       normalizedScore = 0.5
   }
 
-  const passedFloor = checkFloor(valueAfter, factor.threshold.floor)
-  const delta = normalizedScore - calculateNormalizedScore(valueBefore, factor.threshold)
+  const passedFloor = valueAfter !== null ? checkFloor(valueAfter, factor.threshold.floor) : false
+  const delta = (normalizedScore ?? 0) - calculateNormalizedScore(valueBefore, factor.threshold)
 
   return {
     factorId: factor.id,
     factorName: factor.name,
     valueBefore,
-    valueAfter,
+    valueAfter: valueAfter ?? "",
     normalizedScore,
     passedFloor,
-    delta
+    delta,
+    traceId: traceContext?.traceId
   }
 }
 
@@ -82,14 +93,24 @@ async function runMetricEval(cwd: string, spec: string): Promise<string> {
     const scriptRelPath = spec.split(" ")[0]
     const scriptPath = path.resolve(cwd, scriptRelPath)
 
-    // 安全检查：确保脚本路径在工作目录内
-    if (!scriptPath.startsWith(path.resolve(cwd))) {
-      console.warn(`[Evaluator] Script path outside working directory: ${scriptRelPath}`)
+    if (!fs.existsSync(scriptPath)) {
+      logger.warn(`Script not found: ${scriptPath}`)
       return "0"
     }
 
-    if (!fs.existsSync(scriptPath)) {
-      console.warn(`[Evaluator] Script not found: ${scriptPath}`)
+    // 安全检查：使用 realpathSync 解析符号链接后再检查路径
+    const realScriptPath = fs.realpathSync(scriptPath)
+    const realCwd = fs.realpathSync(cwd)
+
+    if (!realScriptPath.startsWith(realCwd + path.sep) && realScriptPath !== realCwd) {
+      logger.warn(`Script path outside working directory: ${scriptRelPath}`)
+      return "0"
+    }
+
+    // 限制脚本必须在 .meta/scripts/ 目录下
+    const allowedDir = path.join(realCwd, ".meta", "scripts")
+    if (!realScriptPath.startsWith(allowedDir + path.sep) && realScriptPath !== allowedDir) {
+      logger.warn(`Script must be in .meta/scripts/ directory: ${scriptRelPath}`)
       return "0"
     }
 
@@ -123,7 +144,7 @@ async function runMetricEval(cwd: string, spec: string): Promise<string> {
       return await Promise.race([outputPromise, timeoutPromise])
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      console.warn(`[Evaluator] Failed to run metric script: ${spec}`, errorMsg)
+      logger.warn(`Failed to run metric script: ${spec}`, errorMsg)
       return "0"
     }
   }
@@ -135,15 +156,15 @@ async function runMetricEval(cwd: string, spec: string): Promise<string> {
 /**
  * 运行 LLM 类型的评估
  */
-async function runLlmEval(cwd: string, measurement: any, session?: Session): Promise<string> {
+async function runLlmEval(cwd: string, measurement: any, session?: Session): Promise<string | null> {
   if (!measurement.llm_prompt) {
-    console.warn("[Evaluator] No llm_prompt provided for llm_eval")
-    return measurement.llm_scale?.includes("1-5") ? "3.5" : "0"
+    logger.warn("No llm_prompt provided for llm_eval")
+    return null
   }
 
   if (!session?.prompt) {
-    console.warn("[Evaluator] No session available for llm_eval")
-    return measurement.llm_scale?.includes("1-5") ? "3.5" : "0"
+    logger.warn("No session available for llm_eval")
+    return null
   }
 
   try {
@@ -163,7 +184,7 @@ async function runLlmEval(cwd: string, measurement: any, session?: Session): Pro
       return String(result.score)
     }
   } catch (error) {
-    console.warn("[Evaluator] Dispatcher call failed, falling back to direct call:", error)
+    logger.warn("Dispatcher call failed, falling back to direct call:", error)
   }
 
   // 回退到直接调用
@@ -181,28 +202,21 @@ async function runLlmEval(cwd: string, measurement: any, session?: Session): Pro
       return String(score)
     }
 
-    console.warn("[Evaluator] Could not extract score from LLM response")
+    logger.warn("Could not extract score from LLM response")
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    console.warn("[Evaluator] LLM evaluation failed:", errorMsg)
+    logger.warn("LLM evaluation failed:", errorMsg)
   }
 
-  // 默认返回中等分数
-  return measurement.llm_scale?.includes("1-5") ? "3.5" : "0"
+  return null
 }
 
-function extractText(response: unknown): string {
-  if (typeof response === "string") return response
-  const value = response as any
-  if (typeof value?.text === "string") return value.text
-  if (Array.isArray(value?.content)) return value.content.map((part: any) => part?.text ?? "").join("\n")
-  return String(response)
-}
+
 
 function extractScoreFromResponse(text: string, scale?: string): number | null {
   // 尝试从响应中提取分数
   const patterns = [
-    /score[:\s]*(\d+\.?\d*)/i,
+    /score[=:\s]*(\d+\.?\d*)/i,
     /(\d+\.?\d*)\s*\/\s*\d+/,
     /(\d+\.?\d*)\s*out\s*of\s*\d+/i,
     /^(\d+\.?\d*)$/m,
@@ -266,14 +280,14 @@ function checkFloor(value: string, floor: string): boolean {
   }
 
   // 检查是否满足 floor 条件
-  if (floor.includes("<")) {
-    return numericValue < floorValue
-  } else if (floor.includes(">")) {
-    return numericValue > floorValue
-  } else if (floor.includes("≥")) {
+  if (floor.includes("≥")) {
     return numericValue >= floorValue
   } else if (floor.includes("≤")) {
     return numericValue <= floorValue
+  } else if (floor.includes(">")) {
+    return numericValue > floorValue
+  } else if (floor.includes("<")) {
+    return numericValue < floorValue
   } else {
     return numericValue >= floorValue
   }
@@ -295,10 +309,13 @@ function calculateCompositeScore(
       continue
     }
 
-    const weight = factor.relations?.weight ?? 0.5
     const result = results.find(r => r.factorId === factor.id)
-    const score = result?.normalizedScore ?? 0.5
+    const score = result?.normalizedScore ?? null
 
+    // Skip factors with null scores (e.g. LLM evaluation failed)
+    if (score === null) continue
+
+    const weight = factor.relations?.weight ?? 0.5
     weightedSum += score * weight
     totalWeight += weight
   }
@@ -312,7 +329,8 @@ function calculateCompositeScore(
 export async function runEvaluation(
   cwd: string,
   design: MetaDesign,
-  session?: Session
+  session?: Session,
+  traceContext?: TraceContext
 ): Promise<EvaluationOutput> {
   const factors = design.eval_factors ?? []
   const results: EvalResult[] = []
@@ -326,7 +344,7 @@ export async function runEvaluation(
       }
     }
 
-    const result = await runEvalFactor(cwd, factor, session)
+    const result = await runEvalFactor(cwd, factor, session, traceContext)
     results.push(result)
   }
 
@@ -370,9 +388,7 @@ export async function updateCardOutcome(
     throw new Error(`Card not found: ${cardId}`)
   }
 
-  const card = yaml.load(fs.readFileSync(cardPath, "utf8")) as any
-
-  // 更新 outcome
+  const card = readYamlStrict(cardPath, CardPassthroughSchema) as Record<string, unknown>
   card.outcome = {
     status: evaluation.forcedRollback ? "rolled_back" : "success",
     actual_eval_deltas: evaluation.results.map(r => ({
@@ -450,11 +466,11 @@ export async function updateBaselines(
     throw new Error("design.yaml not found")
   }
 
-  const design = yaml.load(fs.readFileSync(designPath, "utf8")) as any
+  const design = readYamlStrict(designPath, DesignPassthroughSchema) as MetaDesign
   const factors = design.eval_factors ?? []
 
   for (const result of results) {
-    const factor = factors.find((f: any) => f.id === result.factorId)
+    const factor = factors.find((f) => f.id === result.factorId)
     
     if (factor) {
       factor.threshold.baseline = result.valueAfter
@@ -493,7 +509,7 @@ export function generateEvaluationReport(output: EvaluationOutput): string {
     lines.push(`### ${status} ${result.factorName} (${result.factorId})`)
     lines.push(`- Before: ${result.valueBefore}`)
     lines.push(`- After: ${result.valueAfter}`)
-    lines.push(`- Score: ${result.normalizedScore.toFixed(2)}`)
+    lines.push(`- Score: ${result.normalizedScore !== null ? result.normalizedScore.toFixed(2) : "N/A"}`)
     lines.push(`- Delta: ${deltaStr}`)
     lines.push(`- Floor: ${result.passedFloor ? "Passed" : "FAILED"}`)
     lines.push("")

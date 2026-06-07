@@ -42,7 +42,7 @@ describe("meta runtime snapshot", () => {
       },
     })
 
-    const plans = loadExecutionPlansForLoop(tmp.path, "loop-001")
+    const plans = await loadExecutionPlansForLoop(tmp.path, "loop-001")
     expect(plans.map((plan) => plan.id)).toEqual(["PLAN-001"])
   })
 

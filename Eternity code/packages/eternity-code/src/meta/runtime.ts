@@ -42,10 +42,10 @@ export interface MetaRuntimeSnapshot extends MetaLoopRuntime {
 
 export async function loadMetaRuntimeSnapshot(cwd: string): Promise<MetaRuntimeSnapshot> {
   const runtime = await loadMetaLoopRuntime(cwd)
-  const acceptedLoop = findLatestAcceptedLoop(cwd)
-  const acceptedCards = acceptedLoop ? loadLoopCards(cwd, acceptedLoop) : []
-  const latestPlans = runtime.latestLoop ? loadExecutionPlansForLoop(cwd, runtime.latestLoop.id) : []
-  const acceptedPlans = acceptedLoop ? loadExecutionPlansForLoop(cwd, acceptedLoop.id) : []
+  const acceptedLoop = await findLatestAcceptedLoop(cwd)
+  const acceptedCards = acceptedLoop ? await loadLoopCards(cwd, acceptedLoop) : []
+  const latestPlans = runtime.latestLoop ? await loadExecutionPlansForLoop(cwd, runtime.latestLoop.id) : []
+  const acceptedPlans = acceptedLoop ? await loadExecutionPlansForLoop(cwd, acceptedLoop.id) : []
 
   return {
     ...runtime,
@@ -69,9 +69,10 @@ export async function loadMetaRuntimeSnapshot(cwd: string): Promise<MetaRuntimeS
   }
 }
 
-export function resolveLoop(cwd: string, loopId?: string): MetaLoopRecord | undefined {
+export async function resolveLoop(cwd: string, loopId?: string): Promise<MetaLoopRecord | undefined> {
   if (loopId) {
-    return loadLoopRecords(cwd).find((loop) => loop.id === loopId)
+    const loops = await loadLoopRecords(cwd)
+    return loops.find((loop) => loop.id === loopId)
   }
   return findLatestAcceptedLoop(cwd)
 }

@@ -10,6 +10,11 @@ import { PromptFeedbackLoop, type NoiseType } from "./prompt/feedback-loop.js"
 import { DEFAULT_CARD_TEMPLATE_ID } from "./cards.js"
 import { resolveCard, updateLoopHistory, writeRejectedDirection } from "./cards.js"
 import { writeLoopLog, type LoopLog } from "./execution/logs.js"
+import { readYamlFileAsync, readYamlFileWithValidationAsync } from "./utils/file-io.js"
+import { MetaDesignSchema, MetaDecisionCardSchema, MetaLoopRecordSchema } from "./schemas.js"
+
+const DEFAULT_HIGH_ACCEPTANCE_THRESHOLD = 0.9
+const DEFAULT_LOW_ACCEPTANCE_THRESHOLD = 0.3
 
 export interface MetaDecisionCard {
   _schema_version?: string
@@ -85,7 +90,7 @@ export interface MetaLoopRecord {
       factor_name: string
       value_before: string
       value_after: string
-      normalized_score: number
+      normalized_score: number | null
       passed_floor: boolean
       delta: number
     }>
@@ -133,49 +138,69 @@ export interface UpdateLoopExecutionResult {
 
 export async function loadMetaLoopRuntime(cwd: string): Promise<MetaLoopRuntime> {
   const design = await loadMetaDesign(cwd)
-  const loops = loadLoopRecords(cwd)
+  const loops = await loadLoopRecords(cwd)
   const latestLoop = loops[0]
-  const latestCards = latestLoop ? loadLoopCards(cwd, latestLoop) : []
+  const latestCards = latestLoop ? await loadLoopCards(cwd, latestLoop) : []
 
-  const pendingEntry = loops
-    .map((loop) => ({ loop, cards: loadLoopCards(cwd, loop) }))
-    .find(({ loop, cards }) => {
-      const cardIds = getLoopCardIds(loop)
-      if (cardIds.length === 0) return false
-      if (!loop.decision_session) return true
-      return cards.some((card) => (card.decision?.status ?? "pending") === "pending")
-    })
+  let pendingLoop: MetaLoopRecord | undefined
+  let pendingCards: MetaDecisionCard[] = []
+  for (const loop of loops) {
+    const cards = await loadLoopCards(cwd, loop)
+    const cardIds = getLoopCardIds(loop)
+    if (cardIds.length === 0) continue
+    if (!loop.decision_session) {
+      pendingLoop = loop
+      pendingCards = cards
+      break
+    }
+    if (cards.some((card) => (card.decision?.status ?? "pending") === "pending")) {
+      pendingLoop = loop
+      pendingCards = cards
+      break
+    }
+  }
 
   return {
     design,
     loops,
     latestLoop,
     latestCards,
-    pendingLoop: pendingEntry?.loop,
-    pendingCards: pendingEntry?.cards ?? [],
+    pendingLoop,
+    pendingCards,
   }
 }
 
-export function loadLoopRecords(cwd: string): MetaLoopRecord[] {
-  return listMetaEntryPaths(cwd, "loops", ".yaml")
-    .map((filePath) => readYamlFile<MetaLoopRecord>(filePath))
-    .filter((loop): loop is MetaLoopRecord => Boolean(loop?.id))
-    .sort((a, b) => {
-      const seqA = a.sequence ?? 0
-      const seqB = b.sequence ?? 0
-      if (seqA !== seqB) return seqB - seqA
-      return b.id.localeCompare(a.id)
-    })
+export async function loadLoopRecords(cwd: string): Promise<MetaLoopRecord[]> {
+  const filePaths = listMetaEntryPaths(cwd, "loops", ".yaml")
+  const records: MetaLoopRecord[] = []
+  for (const filePath of filePaths) {
+    const record = await readYamlFileAsync<MetaLoopRecord>(filePath)
+    if (record?.id) records.push(record)
+  }
+  return records.sort((a, b) => {
+    const seqA = a.sequence ?? 0
+    const seqB = b.sequence ?? 0
+    if (seqA !== seqB) return seqB - seqA
+    return b.id.localeCompare(a.id)
+  })
 }
 
-export function loadLoopCards(cwd: string, loop: MetaLoopRecord): MetaDecisionCard[] {
-  return getLoopCardIds(loop)
-    .map((cardId) => readYamlFile<MetaDecisionCard>(resolveMetaEntryPath(cwd, "cards", `${cardId}.yaml`)))
-    .filter((card): card is MetaDecisionCard => Boolean(card?.id))
+export async function loadLoopCards(cwd: string, loop: MetaLoopRecord): Promise<MetaDecisionCard[]> {
+  const cardIds = getLoopCardIds(loop)
+  const cards: MetaDecisionCard[] = []
+  for (const cardId of cardIds) {
+    const card = await readYamlFileWithValidationAsync<MetaDecisionCard>(
+      resolveMetaEntryPath(cwd, "cards", `${cardId}.yaml`),
+      MetaDecisionCardSchema
+    )
+    if (card?.id) cards.push(card)
+  }
+  return cards
 }
 
-export function findLatestAcceptedLoop(cwd: string): MetaLoopRecord | undefined {
-  return loadLoopRecords(cwd).find((loop) => (loop.decision_session?.accepted_cards?.length ?? 0) > 0)
+export async function findLatestAcceptedLoop(cwd: string): Promise<MetaLoopRecord | undefined> {
+  const loops = await loadLoopRecords(cwd)
+  return loops.find((loop) => (loop.decision_session?.accepted_cards?.length ?? 0) > 0)
 }
 
 export async function updateLoopExecutionPlan(
@@ -196,7 +221,7 @@ export async function updateLoopExecutionPlan(
   },
 ): Promise<UpdateLoopExecutionResult> {
   const loopPath = resolveMetaEntryPath(cwd, "loops", `${loopId}.yaml`)
-  const loop = readYamlFile<MetaLoopRecord>(loopPath)
+  const loop = await readYamlFileAsync<MetaLoopRecord>(loopPath)
   if (!loop?.id) throw new Error(`Loop not found: ${loopId}`)
 
   const nextLoop: MetaLoopRecord = {
@@ -241,7 +266,7 @@ export async function updateLoopRollback(
   error?: string,
 ): Promise<void> {
   const loopPath = resolveMetaEntryPath(cwd, "loops", `${loopId}.yaml`)
-  const loop = readYamlFile<MetaLoopRecord>(loopPath)
+  const loop = await readYamlFileAsync<MetaLoopRecord>(loopPath)
   if (!loop?.id) throw new Error(`Loop not found: ${loopId}`)
 
   const now = new Date().toISOString()
@@ -279,10 +304,10 @@ export async function applyLoopDecisions(
   options: ApplyLoopDecisionsOptions = {},
 ): Promise<ApplyLoopDecisionsResult> {
   const loopPath = resolveMetaEntryPath(cwd, "loops", `${loopId}.yaml`)
-  const loop = readYamlFile<MetaLoopRecord>(loopPath)
+  const loop = await readYamlFileAsync<MetaLoopRecord>(loopPath)
   if (!loop?.id) throw new Error(`Loop not found: ${loopId}`)
 
-  const cards = loadLoopCards(cwd, loop)
+  const cards = await loadLoopCards(cwd, loop)
   if (cards.length === 0) throw new Error(`No cards found for ${loopId}`)
 
   const unresolved = cards.filter((card) => !decisions[card.id] && (card.decision?.status ?? "pending") === "pending")
@@ -299,7 +324,13 @@ export async function applyLoopDecisions(
 
   for (const card of cards) {
     const existingStatus = card.decision?.status
-    if (!decisions[card.id] && (!existingStatus || existingStatus === "pending")) continue
+
+    if (existingStatus === undefined) {
+      console.warn(`[MetaLoop] Card ${card.id} has no decision.status field (possible corruption)`)
+      continue
+    }
+
+    if (!decisions[card.id] && existingStatus === "pending") continue
 
     const status = decisions[card.id] ?? existingStatus
     if (!status) continue
@@ -325,7 +356,7 @@ export async function applyLoopDecisions(
     rejectedCards.push(card.id)
     processedCards.push({ card, status: "rejected", note })
 
-    if (!hasNegativeForCard(cwd, card.id)) {
+    if (!await hasNegativeForCard(cwd, card.id)) {
       const negativeId = await writeRejectedDirection(
         cwd,
         card.id,
@@ -413,7 +444,7 @@ export async function updateLoopEvaluation(
   evaluation: EvaluationOutput,
 ): Promise<UpdateLoopEvaluationResult> {
   const loopPath = resolveMetaEntryPath(cwd, "loops", `${loopId}.yaml`)
-  const loop = readYamlFile<MetaLoopRecord>(loopPath)
+  const loop = await readYamlFileAsync<MetaLoopRecord>(loopPath)
   if (!loop?.id) throw new Error(`Loop not found: ${loopId}`)
 
   const evaluatedAt = new Date().toISOString()
@@ -456,7 +487,7 @@ export async function updateLoopEvaluation(
 
 export async function updateLoopCloseSummary(cwd: string, loopId: string, summary: string): Promise<void> {
   const loopPath = resolveMetaEntryPath(cwd, "loops", `${loopId}.yaml`)
-  const loop = readYamlFile<MetaLoopRecord>(loopPath)
+  const loop = await readYamlFileAsync<MetaLoopRecord>(loopPath)
   if (!loop?.id) throw new Error(`Loop not found: ${loopId}`)
 
   const nextLoop: MetaLoopRecord = {
@@ -494,23 +525,21 @@ export async function updateLoopCloseSummary(cwd: string, loopId: string, summar
     }
     writeLoopLog(cwd, loopLog)
   } catch (error) {
-    console.warn("[MetaDesign] Failed to write loop log:", error)
+    throw new Error(`Failed to write loop log: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   // 自动分析并写入 insight
-  try {
-    const acceptedCount = loop.decision_session?.accepted_cards?.length ?? 0
-    const rejectedCount = loop.decision_session?.rejected_cards?.length ?? 0
-    const totalCards = acceptedCount + rejectedCount
-    
-    if (totalCards > 0) {
-      const acceptanceRate = acceptedCount / totalCards
-      
-      // 如果接受率异常高或低，生成 insight
-      if (acceptanceRate > 0.9 || acceptanceRate < 0.3) {
-        const { handleInsightOutput } = await import("./insight-handler.js")
-        const insightText = acceptanceRate > 0.9
-          ? `---INSIGHT START---
+  const acceptedCount = loop.decision_session?.accepted_cards?.length ?? 0
+  const rejectedCount = loop.decision_session?.rejected_cards?.length ?? 0
+  const totalCards = acceptedCount + rejectedCount
+
+  if (totalCards > 0) {
+    const acceptanceRate = acceptedCount / totalCards
+
+    if (acceptanceRate > DEFAULT_HIGH_ACCEPTANCE_THRESHOLD || acceptanceRate < DEFAULT_LOW_ACCEPTANCE_THRESHOLD) {
+      const { handleInsightOutput } = await import("./insight-handler.js")
+      const insightText = acceptanceRate > DEFAULT_HIGH_ACCEPTANCE_THRESHOLD
+        ? `---INSIGHT START---
 title: High acceptance rate in ${loopId}
 source: loop_analysis
 category: process
@@ -524,7 +553,7 @@ implications:
 related:
   - ${loopId}
 ---INSIGHT END---`
-          : `---INSIGHT START---
+        : `---INSIGHT START---
 title: Low acceptance rate in ${loopId}
 source: loop_analysis
 category: process
@@ -538,15 +567,12 @@ implications:
 related:
   - ${loopId}
 ---INSIGHT END---`
-        
-        const result = handleInsightOutput(cwd, insightText)
-        if (result.success) {
-          console.log(`[MetaDesign] Auto-generated insight: ${result.insightId}`)
-        }
+
+      const result = handleInsightOutput(cwd, insightText)
+      if (!result.success) {
+        throw new Error(`Failed to auto-generate insight: ${result.error}`)
       }
     }
-  } catch (error) {
-    console.warn("[MetaDesign] Failed to auto-generate insight:", error)
   }
 }
 
@@ -559,12 +585,12 @@ function getLoopCardIds(loop: MetaLoopRecord) {
   return [...new Set(ids.filter(Boolean))]
 }
 
-function hasNegativeForCard(cwd: string, cardId: string) {
+async function hasNegativeForCard(cwd: string, cardId: string): Promise<boolean> {
   const designPath = resolveMetaDesignPath(cwd)
   if (!fs.existsSync(designPath)) return false
 
   try {
-    const design = readYamlFile<MetaDesign>(designPath)
+    const design = await readYamlFileAsync<MetaDesign>(designPath)
     return (design?.rejected_directions ?? []).some((item) => item.source_card === cardId)
   } catch {
     return false
@@ -581,7 +607,7 @@ async function updateDesignLoopSummary(
   },
 ) {
   const designPath = resolveMetaDesignPath(cwd)
-  const design = readYamlFile<MetaDesign>(designPath)
+  const design = await readYamlFileAsync<MetaDesign>(designPath)
   if (!design) return
 
   const loops = [...(design.loop_history?.loops ?? [])]
@@ -611,11 +637,6 @@ async function updateDesignLoopSummary(
 
 function formatDelta(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`
-}
-
-function readYamlFile<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null
-  return yaml.load(fs.readFileSync(filePath, "utf8")) as T
 }
 
 function writeYamlFile<T>(filePath: string, data: T, lineWidth: number = 100): void {

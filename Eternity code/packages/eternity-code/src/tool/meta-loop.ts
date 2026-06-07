@@ -43,10 +43,10 @@ export const MetaLoopTool = Tool.define("meta_loop", {
       case "status": {
         const runtime = await loadMetaRuntimeSnapshot(cwd)
         const latestLoop = params.loopId
-          ? loadLoopRecords(cwd).find((loop) => loop.id === params.loopId)
+          ? (await loadLoopRecords(cwd)).find((loop) => loop.id === params.loopId)
           : runtime.latestLoop
         const acceptedLoop = params.loopId
-          ? resolveLoop(cwd, params.loopId)
+          ? await resolveLoop(cwd, params.loopId)
           : runtime.acceptedLoop
         const plans =
           acceptedLoop?.id === latestLoop?.id
@@ -97,7 +97,7 @@ export const MetaLoopTool = Tool.define("meta_loop", {
       }
 
       case "evaluate": {
-        const targetLoop = resolveLoop(cwd, params.loopId)
+        const targetLoop = await resolveLoop(cwd, params.loopId)
 
         if (!targetLoop) {
           return {

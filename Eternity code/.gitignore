@@ -28,3 +28,6 @@ opencode-dev
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# Orchestrator dynamic workflow reference document
+orchestrator dynamic workflow.md

@@ -1,4 +1,66 @@
 /**
+ * 证据来源类型
+ *
+ * 用于标记证据的来源类型，支持溯源和信任验证。
+ */
+export type EvidenceSourceType =
+  | "llm_call"          // LLM 调用产生的证据
+  | "file_modification" // 文件修改产生的证据
+  | "tool_invocation"   // 工具调用产生的证据
+  | "human_input"       // 人工输入产生的证据
+  | "system_decision"   // 系统决策产生的证据
+  | "external_data"     // 外部数据源产生的证据
+
+/**
+ * 证据来源接口
+ *
+ * 记录代理输出的证据来源，支持溯源和信任验证。
+ * 每个证据都关联到一个 traceId，用于跨模块追踪。
+ */
+export interface EvidenceSource {
+  /** 证据唯一标识符 */
+  id: string
+  /** 证据来源类型 */
+  type: EvidenceSourceType
+  /** 证据来源标识（如 agent_id, file_path, tool_name） */
+  source: string
+  /** 证据产生的时间戳 */
+  timestamp: string
+  /** 证据内容（如 LLM 响应、文件 diff、工具输出） */
+  content: string | Record<string, unknown>
+  /** 证据置信度 (0.0-1.0) */
+  confidence: number
+  /** 关联的追踪 ID */
+  traceId?: string
+  /** 关联的 span ID */
+  spanId?: string
+  /** 证据元数据 */
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * 证据链条目
+ *
+ * 记录证据之间的因果关系，形成证据链。
+ */
+export interface ProvenanceEntry {
+  /** 条目唯一标识符 */
+  id: string
+  /** 证据来源 */
+  evidence: EvidenceSource
+  /** 产生此证据的代理 ID */
+  agentId: string
+  /** 任务 ID */
+  taskId: string
+  /** 父级证据 ID（用于构建证据链） */
+  parentEvidenceId?: string
+  /** 子级证据 ID 列表 */
+  childEvidenceIds?: string[]
+  /** 产生时间 */
+  createdAt: string
+}
+
+/**
  * 验收清单项
  */
 export interface AcceptanceChecklistItem {
